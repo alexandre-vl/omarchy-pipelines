@@ -73,6 +73,14 @@ Tests relax the panic lints, because an assertion failing is the point.
 - **Duplicated validation.** `Model.isValidSlug` and `split_slug` enforce the
   same rule in two languages on purpose, so the UI never accepts something the
   helper refuses. Change both together.
+- **`Array.isArray` on anything from QML.** Use `Model.asList`. A list that has
+  crossed a QML property boundary is a sequence-backed wrapper: it indexes and
+  has a `length`, but `Array.isArray` says false, so the usual guard throws the
+  data away without a word. It broke the overview captions, reordering, removal
+  and mute simultaneously and none of it raised an error.
+- **A second source of status colour.** Everything goes through
+  `statusColor()`, fed by the theme palette. Two sources is how "running" ended
+  up amber in the bar and blue in the panel.
 - **New dependencies.** The helper has three. Adding a fourth needs a reason,
   and it must work on a stock Omarchy install.
 

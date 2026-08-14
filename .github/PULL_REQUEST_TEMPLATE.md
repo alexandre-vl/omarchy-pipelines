@@ -36,6 +36,8 @@
 
 - [ ] Per-session state stayed in `Service.qml`, not `Panel.qml`
 - [ ] Slug validation still matches between `Model.js` and `split_slug`
+- [ ] Any list from QML goes through `Model.asList`, never `Array.isArray`
+- [ ] Status colours go through `statusColor()`, not a new colour constant
 - [ ] No new runtime dependency, or it is justified above
 - [ ] No token can reach a log, an error string or an IPC reply
 - [ ] Version bumped in both `manifest.json` and `backend/Cargo.toml`, or the
