@@ -383,6 +383,31 @@ impl Engine {
         self.polling = true;
         self.publish();
 
+        // A token adopted from the keyring at startup is not validated then —
+        // blocking startup on a round trip makes the bar look broken on a
+        // laptop that woke up without Wi-Fi. The consequence is that we know a
+        // credential exists but not whose it is, and the panel was rendering
+        // that as "Connected as ?". Resolve it on the first poll that reaches
+        // the network: one request, once per session.
+        if self.auth.login.is_empty() {
+            match self.provider.identify(&token) {
+                Ok(identity) => {
+                    self.auth.login = identity.login;
+                    self.auth.scopes = identity.scopes;
+                    self.auth.fine_grained = identity.fine_grained;
+                    self.auth.error = String::new();
+                }
+                Err(error) => {
+                    if error.is_fatal() {
+                        self.mark_disconnected(error.message());
+                        self.polling = false;
+                        self.publish();
+                        return;
+                    }
+                }
+            }
+        }
+
         let now = unix_now();
         let mut fatal: Option<String> = None;
 

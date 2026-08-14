@@ -6,11 +6,13 @@ One indicator that stays silent while everything is green, turns red the moment
 a build breaks, and spends almost none of your GitHub API quota doing it.
 
 ```
-all green:      ○
-running:        ◐  2
-failing:        ●  1
-mixed:          ●  1  3
+all green:      ✓
+running:        ↻  3      (breathing)
+failing:        ✗  2      (urgent colour)
 ```
+
+One glyph, and at most one number — which always counts the state the glyph is
+showing. Silent when everything is green.
 
 Click it for the project list, click a project for its workflows, click a
 workflow to open the run on GitHub.
@@ -38,11 +40,8 @@ run is in progress, slow when everything is green and nobody is looking. The
 cache is written to disk, so a shell restart repaints instantly and revalidates
 for free rather than re-fetching everything.
 
-The panel shows you exactly what it is doing:
-
-```
-Every 3m · 4984/5000 API calls left · 87% served from cache
-```
+None of this is surfaced in the panel. It is the plugin's job to stay
+within its budget, not the user's job to watch it do so.
 
 ## Install
 

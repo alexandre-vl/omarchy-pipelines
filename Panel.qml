@@ -37,7 +37,6 @@ Panel {
   readonly property var repoViews: engine ? engine.repoViews : []
   readonly property var repos: engine ? engine.repos : []
   readonly property var summary: engine ? engine.summary : ({})
-  readonly property var budget: engine ? engine.budget : ({})
   readonly property var auth: engine ? engine.auth : ({})
   readonly property var tuning: engine ? engine.tuning : Model.settingsIn({})
   readonly property bool connected: engine ? engine.connected : false
@@ -231,7 +230,7 @@ Panel {
     tokenError = ""
     engine.connectWithToken(token, function(reply) {
       root.tokenBusy = false
-      if (reply.ok) { root.tokenText = ""; root.view = "overview" }
+      if (reply.ok) { root.tokenText = ""; root.popView("overview") }
       else root.tokenError = String(reply.error || "That token was refused")
     })
   }
@@ -242,7 +241,7 @@ Panel {
     tokenError = ""
     engine.connectFromGh(function(reply) {
       root.tokenBusy = false
-      if (reply.ok) root.view = "overview"
+      if (reply.ok) root.popView("overview")
       else root.tokenError = String(reply.error || "The GitHub CLI has no usable token")
     })
   }
@@ -277,21 +276,72 @@ Panel {
 
   function activateCursor() {
     if (view === "overview" && selectedIndex >= 0 && selectedIndex < repoViews.length) {
-      detailIndex = selectedIndex
-      view = "detail"
-      selectedIndex = -1
+      openRepo(selectedIndex)
     } else if (view === "detail" && detailRepo && selectedIndex >= 0) {
       var run = detailRepo.runs[selectedIndex]
       if (run && engine) engine.openRun(run.url)
     }
   }
 
+  // Navigation. `navDirection` is +1 going deeper and -1 coming back, and the
+  // content slides that way, so the transition itself says which direction you
+  // moved rather than leaving the view to change with no explanation.
+  property int navDirection: 1
+
+  function pushView(next) {
+    if (view === next) return
+    navDirection = 1
+    selectedIndex = -1
+    cursorActive = false
+    view = next
+  }
+
+  function popView(next) {
+    if (view === next) return
+    navDirection = -1
+    selectedIndex = -1
+    cursorActive = false
+    view = next
+  }
+
+  function openRepo(index) {
+    detailIndex = index
+    pushView("detail")
+  }
+
+  readonly property bool inSubpage: view !== "overview"
+
   function goBack() {
-    if (view === "detail" || view === "settings" || (view === "connect" && connected)) {
-      view = "overview"
-      selectedIndex = -1
-    } else {
-      close()
+    // The connect screen is the root when there is no account: there is
+    // nothing behind it to go back to, so Escape closes the panel instead of
+    // stranding the user on an empty overview.
+    if (view === "connect" && !connected) { close(); return }
+    if (view === "detail") { popView("overview"); return }
+    if (view === "connect") { popView("settings"); return }
+    if (view === "settings") { popView("overview"); return }
+    close()
+  }
+
+  onViewChanged: navSlide.restart()
+
+  ParallelAnimation {
+    id: navSlide
+    running: false
+    NumberAnimation {
+      target: content
+      property: "x"
+      from: root.navDirection * Style.space(18)
+      to: 0
+      duration: root.animate ? 190 : 0
+      easing.type: Easing.OutCubic
+    }
+    NumberAnimation {
+      target: content
+      property: "opacity"
+      from: 0.4
+      to: 1.0
+      duration: root.animate ? 190 : 0
+      easing.type: Easing.OutQuad
     }
   }
 
@@ -324,24 +374,65 @@ Panel {
 
         PanelHero {
           id: hero
-          title: root.view === "detail" && root.detailRepo ? root.detailRepo.label
-            : root.view === "settings" ? "Pipelines settings"
+          title: root.view === "detail" && root.detailRepo ? Model.rowTitle(root.detailRepo)
+            : root.view === "settings" ? "Settings"
             : root.view === "connect" ? "Connect GitHub"
             : "Pipelines"
           meta: root.heroMeta
           detail: ""
           foreground: root.foreground
           fontFamily: root.fontFamily
-          iconComponent: Component {
+
+          // In a subpage the leading glyph becomes the way out. A back arrow
+          // where the icon was is the one place people already look for it,
+          // and it makes the hierarchy visible instead of implied.
+          iconComponent: root.inSubpage ? backControl : statusGlyph
+          trailingControl: root.view === "overview" ? overviewActions
+            : root.view === "detail" ? detailActions : null
+        }
+
+        Component {
+          id: statusGlyph
+          Text {
+            text: root.barGlyph
+            color: root.barColor
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.display
+            Behavior on color { enabled: root.animate; ColorAnimation { duration: 220 } }
+          }
+        }
+
+        Component {
+          id: backControl
+          Item {
+            implicitWidth: Style.font.display
+            implicitHeight: Style.font.display
             Text {
-              text: root.barGlyph
-              color: root.barColor
+              id: backArrow
+              anchors.centerIn: parent
+              text: "\u{f053}"
+              color: backMouse.containsMouse ? root.accent : root.foreground
               font.family: root.fontFamily
-              font.pixelSize: Style.font.display
-              Behavior on color { enabled: root.animate; ColorAnimation { duration: 220 } }
+              font.pixelSize: Style.font.title
+              Behavior on color { enabled: root.animate; ColorAnimation { duration: 120 } }
+              // Nudges toward the direction it will take you.
+              x: backMouse.containsMouse ? -Style.space(2) : 0
+              Behavior on x { enabled: root.animate; NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+            }
+            MouseArea {
+              id: backMouse
+              anchors.fill: parent
+              anchors.margins: -Style.space(6)
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.goBack()
+            }
+            PanelToolTip {
+              visible: backMouse.containsMouse
+              text: "Back  ·  Esc"
+              fontFamily: root.fontFamily
             }
           }
-          trailingControl: root.view === "overview" ? overviewActions : null
         }
 
         Component {
@@ -363,7 +454,21 @@ Panel {
               foreground: root.foreground
               fontFamily: root.fontFamily
               tooltipText: "Settings"
-              onClicked: { root.view = "settings"; root.selectedIndex = -1 }
+              onClicked: root.pushView("settings")
+            }
+          }
+        }
+
+        Component {
+          id: detailActions
+          Button {
+            iconText: "\u{f09b}"
+            bordered: false
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            tooltipText: "Open this repository on GitHub"
+            onClicked: if (root.engine && root.detailRepo) {
+              root.engine.openRun("https://github.com/" + root.detailRepo.slug + "/actions")
             }
           }
         }
@@ -401,59 +506,103 @@ Panel {
           Repeater {
             model: root.repoViews
             delegate: Item {
+              id: overviewRow
               required property var modelData
               required property int index
               width: parent ? parent.width : 0
               height: root.rowHeight
 
-              Button {
+              readonly property bool hot: (root.cursorActive && root.selectedIndex === index)
+                || rowMouse.containsMouse
+              readonly property color stateColor: modelData.muted ? root.dim
+                : (modelData.health === "failing" || modelData.health === "stale") ? root.urgent
+                : modelData.health === "running" ? root.accent
+                : root.foreground
+
+              Rectangle {
                 anchors.fill: parent
-                leftAlign: true
-                bordered: false
-                iconText: Model.glyphFor(modelData.health)
-                text: modelData.label
-                foreground: modelData.muted ? root.dim
-                  : (modelData.health === "failing" || modelData.health === "stale") ? root.urgent
-                  : modelData.health === "running" ? root.accent
-                  : root.foreground
-                fontFamily: root.fontFamily
-                hasCursor: root.cursorActive && root.selectedIndex === index
-                onHovered: function(on) { if (on) { root.cursorActive = true; root.selectedIndex = index } }
-                onClicked: { root.detailIndex = index; root.view = "detail"; root.selectedIndex = -1 }
+                radius: Style.cornerRadius
+                color: overviewRow.hot ? Style.hoverFill : "transparent"
+                Behavior on color { enabled: root.animate; ColorAnimation { duration: 120 } }
               }
 
-              // Right-aligned age, outside the button so it never competes
-              // with the label for the click target.
-              Text {
+              Row {
+                anchors.left: parent.left
+                anchors.leftMargin: Style.space(10)
+                anchors.right: rowMeta.left
+                anchors.rightMargin: Style.space(8)
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(8)
+
+                Text {
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: Model.glyphFor(overviewRow.modelData.health)
+                  color: overviewRow.stateColor
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                }
+
+                // Owner and name on one line, the owner dimmed. Two projects
+                // called `core` in different orgs were previously
+                // indistinguishable, and the org is the part you need to tell
+                // them apart, not the part to hide.
+                Row {
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: 0
+                  Text {
+                    text: Model.ownerPrefix(overviewRow.modelData.slug)
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                  }
+                  Text {
+                    text: Model.rowTitle(overviewRow.modelData)
+                    color: overviewRow.stateColor
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                  }
+                }
+              }
+
+              // Age plus a chevron. The chevron is what says "this row goes
+              // somewhere" — without it the subpage is a surprise.
+              Row {
+                id: rowMeta
                 anchors.right: parent.right
                 anchors.rightMargin: Style.space(10)
                 anchors.verticalCenter: parent.verticalCenter
-                textFormat: Text.PlainText
-                text: modelData.error !== "" ? "unreachable"
-                  : Model.relativeTime(modelData.checkedAt, root.nowSeconds)
-                color: root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
+                spacing: Style.space(6)
+
+                Text {
+                  anchors.verticalCenter: parent.verticalCenter
+                  textFormat: Text.PlainText
+                  text: overviewRow.modelData.error !== "" ? "unreachable"
+                    : Model.relativeTime(overviewRow.modelData.checkedAt, root.nowSeconds)
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+
+                Text {
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: "\u{f054}"
+                  color: overviewRow.hot ? overviewRow.stateColor : root.dim
+                  opacity: overviewRow.hot ? 1.0 : 0.55
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  Behavior on opacity { enabled: root.animate; NumberAnimation { duration: 120 } }
+                }
+              }
+
+              MouseArea {
+                id: rowMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onEntered: { root.cursorActive = true; root.selectedIndex = overviewRow.index }
+                onClicked: root.openRepo(overviewRow.index)
               }
             }
-          }
-
-          // The budget line is the honest answer to "why isn't this instant".
-          Text {
-            visible: root.repoViews.length > 0 && root.budget && root.budget.limit > 0
-            width: parent.width
-            textFormat: Text.PlainText
-            topPadding: Style.space(8)
-            text: {
-              var b = root.budget
-              var free = b.requests > 0 ? Math.round(100 * b.conditionalHits / b.requests) : 0
-              return "Every " + Model.formatDuration(b.interval) + " · "
-                + b.remaining + "/" + b.limit + " API calls left · "
-                + free + "% served from cache"
-            }
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
           }
         }
 
@@ -530,17 +679,6 @@ Panel {
               }
             }
           }
-
-          Button {
-            width: parent.width
-            leftAlign: true
-            bordered: false
-            iconText: "\u{f060}"
-            text: "Back"
-            foreground: root.dim
-            fontFamily: root.fontFamily
-            onClicked: root.goBack()
-          }
         }
 
         // --------------------------------------------------------- settings
@@ -560,9 +698,12 @@ Panel {
             width: parent.width
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
-            text: root.connected
-              ? ("Connected as " + (root.auth.login || "?") + " · " + (root.auth.sourceLabel || ""))
-              : "Not connected"
+            // The login is unknown until the first poll resolves it. "Connected
+            // as ?" reads as a fault; saying only what we actually know does not.
+            text: !root.connected ? "Not connected"
+              : root.auth.login
+                ? ("Connected as " + root.auth.login + "  ·  " + (root.auth.sourceLabel || ""))
+                : ("Connected  ·  " + (root.auth.sourceLabel || "GitHub"))
             color: root.connected ? root.foreground : root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
@@ -587,7 +728,7 @@ Panel {
               bordered: true
               foreground: root.foreground
               fontFamily: root.fontFamily
-              onClicked: { root.view = "connect"; root.tokenError = "" }
+              onClicked: { root.tokenError = ""; root.pushView("connect") }
             }
             Button {
               visible: root.connected
@@ -595,7 +736,7 @@ Panel {
               bordered: true
               foreground: root.urgent
               fontFamily: root.fontFamily
-              onClicked: if (root.engine) root.engine.disconnect(function(reply) { root.view = "connect" })
+              onClicked: if (root.engine) root.engine.disconnect(function(reply) { root.pushView("connect") })
             }
           }
 
@@ -791,48 +932,18 @@ Panel {
 
           PanelSeparator { width: parent.width }
 
-          // Refresh cadence, quota reserve and notifications are declared in
-          // manifest.json's `barWidget.schema`, so Omarchy renders them in its
-          // own bar-widget settings editor. Duplicating them here would mean
-          // two UIs writing the same shell.json keys, which is exactly how
-          // they end up disagreeing.
+          // Refresh cadence and notifications are declared in manifest.json's
+          // `barWidget.schema`, so Omarchy renders them in its own bar-widget
+          // settings editor. Duplicating them here would mean two UIs writing
+          // the same shell.json keys, which is how they end up disagreeing.
           Text {
             width: parent.width
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
-            text: "Refresh cadence, API reserve and notifications live in "
-              + "Bar settings → Pipelines."
+            text: "Refresh timing and notifications live in Bar settings → Pipelines."
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
-          }
-
-          Text {
-            width: parent.width
-            textFormat: Text.PlainText
-            wrapMode: Text.Wrap
-            visible: root.budget && root.budget.limit > 0
-            text: {
-              var b = root.budget
-              var free = b.requests > 0 ? Math.round(100 * b.conditionalHits / b.requests) : 0
-              return "Currently polling every " + Model.formatDuration(b.interval)
-                + ". " + b.spendable + " of " + b.remaining + " remaining calls are spendable; "
-                + free + "% of requests so far were answered from cache at no cost."
-            }
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-          }
-
-          Button {
-            width: parent.width
-            leftAlign: true
-            bordered: false
-            iconText: "\u{f060}"
-            text: "Back"
-            foreground: root.dim
-            fontFamily: root.fontFamily
-            onClicked: root.goBack()
           }
         }
 
@@ -930,13 +1041,25 @@ Panel {
     }
   }
 
-  // The one-line status under the title, per view.
+  // The one-line status under the title, per view. In a subpage it doubles as
+  // the breadcrumb: the title is where you are, this says what it belongs to
+  // and where you came from.
   readonly property string heroMeta: {
     if (!backendReady) return errorText
-    if (view === "connect") return connected ? "Connected as " + (auth.login || "?") : "Not connected"
-    if (view === "settings") return repos.length + " project" + (repos.length === 1 ? "" : "s")
+    if (view === "connect") {
+      if (!connected) return "Not connected"
+      return auth.login ? "Connected as " + auth.login : "Connected"
+    }
+    if (view === "settings") return "Pipelines  ›  " + repos.length
+      + " project" + (repos.length === 1 ? "" : "s")
     if (view === "detail" && detailRepo) {
-      return detailRepo.slug + " · " + Model.relativeTime(detailRepo.checkedAt, nowSeconds)
+      // The owner belongs here rather than in the title: the title is the
+      // thing you picked, this is the org it lives in.
+      var owner = Model.ownerPrefix(detailRepo.slug).replace("/", "")
+      var when = detailRepo.error !== ""
+        ? "could not refresh"
+        : "checked " + Model.relativeTime(detailRepo.checkedAt, nowSeconds)
+      return (owner === "" ? "" : owner + "  ·  ") + when
     }
     if (!connected) return "Not connected"
     if (repoViews.length === 0) return "No projects yet"
