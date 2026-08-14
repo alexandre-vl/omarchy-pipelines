@@ -166,34 +166,39 @@ function glyphFor(health) {
   }
 }
 
-// Which of the bar's theme colors a state should use. Returning a role rather
-// than a color keeps the theme mapping in QML, where the theme lives.
-function colorRoleFor(health) {
-  switch (String(health || "")) {
-    case "failing": return "urgent"
-    case "stale":   return "urgent"
-    case "running": return "accent"
-    case "passing": return "foreground"
-    default:        return "dim"
-  }
+// Derive the single state the bar shows. The helper sends this precomputed;
+// the fallback keeps the function usable on a bare summary.
+function worstOf(summary) {
+  var s = summary && typeof summary === "object" ? summary : {}
+  if (s.worst) return String(s.worst)
+  if (Number(s.failing) > 0) return "failing"
+  if (Number(s.stale) > 0) return "stale"
+  if (Number(s.running) > 0) return "running"
+  if (Number(s.passing) > 0) return "passing"
+  return "unknown"
 }
 
-// The bar label: silent when everything is green, counts when it is not.
-// This is the whole point of the aggregate presentation — an indicator that
-// says something when there is nothing to say trains people to ignore it.
+// The bar label: silent when everything is green, and otherwise exactly one
+// number, belonging to the glyph beside it.
+//
+// It used to show failing and running counts side by side, which rendered as
+// "✗ 2 1" — two bare numbers with nothing to say which was which, both in the
+// failure colour. A count is only legible when it is unambiguous which thing
+// is being counted, so the label now counts the state the glyph is already
+// showing and nothing else.
+//
+// A count of one is omitted: the glyph alone already says "something is
+// failing", and "✗ 1" adds a character without adding information.
 function barLabel(summary) {
   var s = summary && typeof summary === "object" ? summary : {}
-  var parts = []
-  if (Number(s.failing) > 0) parts.push(String(s.failing))
-  if (Number(s.running) > 0) parts.push(String(s.running))
-  return parts.join(" ")
-}
-
-function barVisible(summary, repos) {
-  var list = Array.isArray(repos) ? repos : []
-  if (list.length === 0) return true
-  var s = summary && typeof summary === "object" ? summary : {}
-  return Number(s.failing) > 0 || Number(s.running) > 0 || Number(s.stale) > 0
+  var worst = worstOf(s)
+  // Only states that are asking for attention get a number. "4 projects are
+  // green" is not news, and a permanent digit in the bar is exactly the kind
+  // of always-on detail this indicator exists to avoid.
+  if (worst !== "failing" && worst !== "stale" && worst !== "running") return ""
+  var count = Number(s[worst])
+  if (!isFinite(count) || count < 2) return ""
+  return String(count)
 }
 
 // "4m ago". Seconds are never shown: a CI dashboard that reports "3s ago"
@@ -248,6 +253,34 @@ function tooltipFor(snapshot, nowSeconds) {
     : worst.health === "running" ? "running"
     : worst.health === "stale" ? "not refreshed" : "passed"
   return worst.label + " · " + run.workflow + " " + verb + " · " + when
+}
+
+// The owner half of a slug, with its slash, ready to be drawn dimmed in front
+// of the repository name. Empty for anything that is not a valid slug, so the
+// caller can fall back to showing the label alone.
+function ownerPrefix(slug) {
+  var raw = String(slug || "")
+  var cut = raw.indexOf("/")
+  if (cut <= 0 || cut === raw.length - 1) return ""
+  return raw.slice(0, cut + 1)
+}
+
+// The repository half of a slug.
+function repoName(slug) {
+  var raw = String(slug || "")
+  var cut = raw.indexOf("/")
+  if (cut < 0 || cut === raw.length - 1) return raw
+  return raw.slice(cut + 1)
+}
+
+// What to draw as the row's main label. A user-supplied label replaces the
+// repository name but never the owner: knowing "Deploy" is called that is no
+// use if you cannot tell which of two orgs it belongs to.
+function rowTitle(repo) {
+  var r = repo && typeof repo === "object" ? repo : {}
+  var label = String(r.label || "")
+  var name = repoName(r.slug)
+  return label !== "" ? label : name
 }
 
 // A run's own one-line summary for the detail list.
@@ -353,7 +386,8 @@ function notificationFor(transition) {
 
 if (typeof module !== "undefined") module.exports = {
   barEntry, reposIn, settingsIn, isValidSlug, slugVerdict, slugFromInput,
-  parseLine, protocolAccepted, glyphFor, colorRoleFor, barLabel, barVisible,
+  parseLine, protocolAccepted, glyphFor, barLabel,
+  worstOf, ownerPrefix, repoName, rowTitle,
   relativeTime, formatDuration, tooltipFor, runSubtitle, moveItem, removeAt,
   addRepo, setFieldAt, dropIndex, persistPayload, shouldNotify, notificationFor
 }

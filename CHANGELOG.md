@@ -10,6 +10,34 @@ missing.
 
 ## Unreleased
 
+### Fixed
+
+- **The keyring was never used.** The check for whether `secret-tool` was
+  available ran `secret-tool --version`, which is not a supported flag — it
+  prints usage and exits 2. So the probe reported the keyring as unavailable on
+  every machine, and every token silently went to the plaintext fallback file
+  instead, on systems where the keyring worked perfectly. There is no proxy
+  check any more: each operation attempts the real thing and treats only a
+  genuine "not installed" spawn failure as unavailable.
+- A token adopted from storage at startup left the account name unknown, which
+  the panel rendered as "Connected as ?". The login is now resolved on the
+  first poll that reaches the network — one request, once per session.
+
+### Changed
+
+- The bar label showed the failing and running counts side by side, which
+  rendered as `✗ 2 1`: two bare numbers with nothing to say which was which,
+  both in the failure colour. It now shows one number, counting the state the
+  glyph is already showing, and omits it entirely when the count is one.
+- The project list shows the owner as well as the repository, dimmed and
+  inline, so two projects called `core` in different orgs are distinguishable.
+  The detail screen carries the owner in its subtitle.
+- Subpage navigation is explicit: a back arrow replaces the status glyph in the
+  hero, the subtitle doubles as a breadcrumb, rows carry a chevron to show they
+  lead somewhere, and the content slides in the direction you moved.
+- Removed the API-budget readouts from the panel. The governor still does all
+  of it; none of it is the user's problem to read.
+
 ## 0.1.0
 
 First release.

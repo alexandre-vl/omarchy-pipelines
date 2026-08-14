@@ -184,20 +184,25 @@ pub fn clear() -> Result<(), String> {
     Ok(())
 }
 
-fn secret_tool_available() -> bool {
-    Command::new("secret-tool")
-        .arg("--version")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
+/// There is deliberately no "is secret-tool available" probe.
+///
+/// There used to be one, and it ran `secret-tool --version`. That flag does not
+/// exist: secret-tool prints its usage and exits 2. So the probe reported the
+/// keyring as unavailable on every machine, and every token silently landed in
+/// the plaintext fallback file instead — on a system where the keyring worked
+/// perfectly and `gh` was already using it.
+///
+/// The lesson is that a proxy check can fail in a direction that quietly
+/// degrades security. Each operation below now attempts the real thing and
+/// treats only a genuine `NotFound` spawn failure as "not installed".
+fn spawn_failure(error: &std::io::Error) -> String {
+    match error.kind() {
+        std::io::ErrorKind::NotFound => "secret-tool is not installed".to_string(),
+        _ => format!("Could not run secret-tool: {}", redact(&error.to_string())),
+    }
 }
 
 fn keyring_lookup() -> Option<(String, TokenSource)> {
-    if !secret_tool_available() {
-        return None;
-    }
     let output = Command::new("secret-tool")
         .args([
             "lookup",
@@ -229,9 +234,6 @@ fn keyring_lookup() -> Option<(String, TokenSource)> {
 }
 
 fn keyring_store(token: &str, source: TokenSource) -> Result<(), String> {
-    if !secret_tool_available() {
-        return Err("secret-tool is not available".into());
-    }
     let mut child = Command::new("secret-tool")
         .args([
             "store",
@@ -245,7 +247,7 @@ fn keyring_store(token: &str, source: TokenSource) -> Result<(), String> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|error| format!("Could not run secret-tool: {}", redact(&error.to_string())))?;
+        .map_err(|error| spawn_failure(&error))?;
 
     let tag = match source {
         TokenSource::GhCli => "gh-cli",
@@ -271,9 +273,6 @@ fn keyring_store(token: &str, source: TokenSource) -> Result<(), String> {
 }
 
 fn keyring_clear() -> Result<(), String> {
-    if !secret_tool_available() {
-        return Err("secret-tool is not available".into());
-    }
     let status = Command::new("secret-tool")
         .args([
             "clear",
@@ -286,7 +285,7 @@ fn keyring_clear() -> Result<(), String> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
-        .map_err(|_| "Could not run secret-tool".to_string())?;
+        .map_err(|error| spawn_failure(&error))?;
     if status.success() {
         Ok(())
     } else {

@@ -100,21 +100,42 @@ assert.ok(!Model.protocolAccepted(null, 1))
 // --------------------------------------------------------------- presentation
 
 // Silence when green is the entire point of the aggregate indicator.
-assert.equal(Model.barLabel({ failing: 0, running: 0 }), "")
-assert.equal(Model.barLabel({ failing: 1, running: 0 }), "1")
-assert.equal(Model.barLabel({ failing: 1, running: 3 }), "1 3")
+assert.equal(Model.barLabel({ worst: "passing", passing: 4 }), "")
 assert.equal(Model.barLabel(null), "")
 
-assert.equal(Model.barVisible({ failing: 0, running: 0, stale: 0 }, [{}]), false)
-assert.equal(Model.barVisible({ failing: 1, running: 0, stale: 0 }, [{}]), true)
-assert.equal(Model.barVisible({ stale: 1 }, [{}]), true)
-// With nothing configured the widget stays visible, or there is no way in.
-assert.equal(Model.barVisible({ failing: 0, running: 0, stale: 0 }, []), true)
+// The count must belong to the glyph beside it. The old label showed failing
+// and running side by side, which rendered as two bare numbers ("2 1") with
+// nothing to say which was which.
+assert.equal(Model.barLabel({ worst: "failing", failing: 2, running: 1 }), "2",
+  "the count is of the worst state only")
+assert.equal(Model.barLabel({ worst: "running", failing: 0, running: 3 }), "3")
 
-assert.equal(Model.colorRoleFor("failing"), "urgent")
-assert.equal(Model.colorRoleFor("running"), "accent")
-assert.equal(Model.colorRoleFor("passing"), "foreground")
-assert.equal(Model.colorRoleFor("nonsense"), "dim")
+// One is implied by the glyph; the digit adds nothing.
+assert.equal(Model.barLabel({ worst: "failing", failing: 1, running: 5 }), "")
+
+// Works without the precomputed field, so a bare summary still renders.
+assert.equal(Model.barLabel({ failing: 4, running: 2 }), "4")
+assert.equal(Model.worstOf({ failing: 0, stale: 2, running: 1 }), "stale")
+assert.equal(Model.worstOf({}), "unknown")
+assert.equal(Model.worstOf({ worst: "running", failing: 9 }), "running",
+  "the precomputed field wins over derivation")
+
+// --------------------------------------------------------------- org display
+
+assert.equal(Model.ownerPrefix("home-assistant/core"), "home-assistant/")
+assert.equal(Model.repoName("home-assistant/core"), "core")
+assert.equal(Model.ownerPrefix("nonsense"), "", "no owner to show for a bare name")
+assert.equal(Model.repoName("nonsense"), "nonsense")
+assert.equal(Model.ownerPrefix("owner/"), "")
+assert.equal(Model.ownerPrefix("/name"), "")
+
+// A custom label replaces the repository name but never the owner: knowing a
+// project is called "Deploy" is no help if two orgs both have one.
+assert.equal(Model.rowTitle({ slug: "a/b", label: "" }), "b")
+assert.equal(Model.rowTitle({ slug: "a/b", label: "Deploy" }), "Deploy")
+assert.equal(Model.rowTitle(null), "")
+
+
 assert.ok(Model.glyphFor("passing") !== Model.glyphFor("failing"))
 
 const now = 1_700_000_000
