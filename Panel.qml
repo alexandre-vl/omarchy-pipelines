@@ -97,12 +97,22 @@ Panel {
   // same reason: recognition and status are carried by different channels, and
   // the slot never changes width.
 
-  // GitHub's own state palette. Semantic colours rather than theme ones,
-  // because green-pass / amber-running / red-fail is near-universal and these
-  // exact values are already contrast-tested against light and dark by GitHub.
-  readonly property color okColor: "#3fb950"
-  readonly property color busyColor: "#d29922"
-  readonly property color badColor: "#f85149"
+  // Status colours come from the active Omarchy theme's own palette, resolved
+  // once in the service. One function feeds the bar badge, every row glyph and
+  // the hero, so a state cannot look like two different things depending on
+  // where it is drawn — which is exactly what happened when the badge called
+  // "running" amber while the panel rows called it accent-blue.
+  readonly property var palette: engine ? engine.palette : ({})
+
+  function statusColor(health) {
+    var themed = Model.statusColor(palette, health)
+    if (themed !== "") return themed
+    // A theme with no green or amber still has these.
+    if (health === "failing") return urgent
+    if (health === "running") return accent
+    if (health === "passing") return foreground
+    return dim
+  }
 
   // Empty is a state with nothing to report, so it gets no badge at all —
   // just the mark, exactly as an unstarted tab shows a bare favicon.
@@ -115,12 +125,7 @@ Panel {
     return "\u{f111}"                            // filled dot
   }
 
-  readonly property color badgeColor: {
-    if (worst === "passing") return okColor
-    if (worst === "failing") return badColor
-    if (worst === "running") return busyColor
-    return dim   // stale or unknown: present, but not claiming to know
-  }
+  readonly property color badgeColor: statusColor(worst)
 
   // The mark itself stays the bar's own foreground and never takes a status
   // colour — a bar full of shouting icons is one nobody reads. The one
@@ -156,7 +161,6 @@ Panel {
         color: root.markColor
         font.family: root.fontFamily
         font.pixelSize: mark.markSize
-        Behavior on color { enabled: root.animate; ColorAnimation { duration: 200 } }
       }
 
       Item {
@@ -172,9 +176,15 @@ Panel {
         // Positioned from the centre rather than from the Text's bounds: a
         // glyph's advance width includes side bearings, so anchoring to its
         // edge puts the badge somewhere slightly different in every font.
+        //
+        // The offsets are deliberately not rounded. The bar mark is 13px and
+        // the hero mark is 24px, and rounding turned a 0.27 ratio into 0.308 at
+        // 13px but 0.25 at 24px — a 20% difference between the two, which is
+        // exactly the drift that made the two icons look like different
+        // designs. Only the diameter is rounded, so the disc stays crisp.
         anchors.centerIn: parent
-        anchors.horizontalCenterOffset: Math.round(mark.markSize * 0.30)
-        anchors.verticalCenterOffset: Math.round(mark.markSize * 0.27)
+        anchors.horizontalCenterOffset: mark.markSize * 0.30
+        anchors.verticalCenterOffset: mark.markSize * 0.27
 
         // Punched out of the mark in the bar's own background, so the badge
         // reads as sitting on top rather than colliding with the octocat's
@@ -193,19 +203,7 @@ Panel {
           color: root.badgeColor
           font.family: root.fontFamily
           font.pixelSize: Math.round(badge.diameter * 0.92)
-          Behavior on color { enabled: root.animate; ColorAnimation { duration: 200 } }
         }
-
-        // Only the badge breathes, and only while something is running. The
-        // mark holding still is what makes the motion mean something.
-        SequentialAnimation on opacity {
-          running: root.worst === "running" && root.badgeVisible && root.animate
-          loops: Animation.Infinite
-          alwaysRunToEnd: true
-          NumberAnimation { to: 0.35; duration: 900; easing.type: Easing.InOutSine }
-          NumberAnimation { to: 1.0; duration: 900; easing.type: Easing.InOutSine }
-        }
-        onVisibleChanged: if (!visible) opacity = 1.0
       }
   }
 
@@ -637,9 +635,13 @@ Panel {
 
               readonly property bool hot: (root.cursorActive && root.selectedIndex === index)
                 || rowMouse.containsMouse
-              readonly property color stateColor: modelData.muted ? root.dim
-                : (modelData.health === "failing" || modelData.health === "stale") ? root.urgent
-                : modelData.health === "running" ? root.accent
+              // The glyph carries the status; the text stays neutral unless the
+              // build is actually broken. Colouring every row by state turned
+              // a mostly-green list into a wall of colour that said nothing.
+              readonly property color glyphColor: modelData.muted
+                ? root.dim : root.statusColor(modelData.health)
+              readonly property color textColor: modelData.muted ? root.dim
+                : modelData.health === "failing" ? root.statusColor("failing")
                 : root.foreground
 
               Rectangle {
@@ -661,7 +663,7 @@ Panel {
                   id: rowGlyph
                   anchors.verticalCenter: parent.verticalCenter
                   text: Model.glyphFor(overviewRow.modelData.health)
-                  color: overviewRow.stateColor
+                  color: overviewRow.glyphColor
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.body
                 }
@@ -696,7 +698,7 @@ Panel {
                   Text {
                     id: nameText
                     text: Model.rowTitle(overviewRow.modelData)
-                    color: overviewRow.stateColor
+                    color: overviewRow.textColor
                     elide: Text.ElideRight
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.body
@@ -727,7 +729,7 @@ Panel {
                 Text {
                   anchors.verticalCenter: parent.verticalCenter
                   text: "\u{f054}"
-                  color: overviewRow.hot ? overviewRow.stateColor : root.dim
+                  color: overviewRow.hot ? overviewRow.textColor : root.dim
                   opacity: overviewRow.hot ? 1.0 : 0.55
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
@@ -802,9 +804,9 @@ Panel {
 
               readonly property bool hot: (root.cursorActive && root.selectedIndex === index)
                 || runMouse.containsMouse
-              readonly property color stateColor: modelData.health === "failing" ? root.urgent
-                : modelData.health === "running" ? root.accent
-                : root.foreground
+              readonly property color glyphColor: root.statusColor(modelData.health)
+              readonly property color textColor: modelData.health === "failing"
+                ? root.statusColor("failing") : root.foreground
 
               Rectangle {
                 anchors.fill: parent
@@ -820,7 +822,7 @@ Panel {
                 x: Style.space(10)
                 y: Style.space(7)
                 text: Model.glyphFor(runRow.modelData.health)
-                color: runRow.stateColor
+                color: runRow.glyphColor
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.body
               }
@@ -839,7 +841,7 @@ Panel {
                 textFormat: Text.PlainText
                 elide: Text.ElideRight
                 text: runRow.modelData.workflow
-                color: runRow.stateColor
+                color: runRow.textColor
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.body
               }
@@ -1173,9 +1175,9 @@ Panel {
                   : root.addState === "checking" ? "\u{f021}"
                   : root.addState === "duplicate" ? "\u{f071}"
                   : "\u{f00d}"
-                color: root.addState === "ok" ? root.accent
+                color: root.addState === "ok" ? root.statusColor("passing")
                   : (root.addState === "checking" || root.addState === "duplicate") ? root.dim
-                  : root.urgent
+                  : root.statusColor("failing")
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
 

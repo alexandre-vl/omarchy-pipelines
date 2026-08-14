@@ -6,13 +6,18 @@ One indicator that stays silent while everything is green, turns red the moment
 a build breaks, and spends almost none of your GitHub API quota doing it.
 
 The bar shows a GitHub mark with a small status badge on it, the way a CI
-favicon works in a browser tab: a green check when everything passed, an amber
-dot while something is running, a red cross when something failed. Nothing
-configured yet is just the bare mark.
+favicon works in a browser tab: a check when everything passed, a dot while
+something is running, a cross when something failed. Nothing configured yet is
+just the bare mark. The mark never changes, so the widget always looks like
+itself; only the badge does.
 
-The mark itself never changes, so the widget always looks like itself; only the
-badge moves. Only the badge animates, too — it breathes while a run is in
-progress, and the mark holding still is what makes that mean something.
+Status colours come from your active Omarchy theme's own palette — the same
+green, amber and red the rest of your desktop uses — read from the theme's
+`colors.toml` and re-read when you switch themes. One table drives the bar
+badge and every row in the panel, so a state never looks like two different
+things depending on where you see it.
+
+Nothing about the icon animates.
 
 Click it for the project list, click a project for its workflows, click a
 workflow to open the run on GitHub.

@@ -166,6 +166,61 @@ function glyphFor(health) {
   }
 }
 
+// Pull the status colours out of a theme's `colors.toml`.
+//
+// Omarchy's `Color` singleton keeps only foreground, background, accent, muted
+// and urgent, so there is no green and no amber to be had from it — but every
+// theme's colors.toml defines the full terminal palette, and those are the
+// colours the rest of the desktop is already using. Reading them directly is
+// what makes the status badge match the theme instead of importing someone
+// else's idea of green.
+//
+// Deliberately forgiving: a theme that omits a key gets the fallback rather
+// than an error, and a hand-edited file cannot break the widget.
+function parsePalette(text) {
+  var out = {}
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var match = lines[i].match(/^\s*([A-Za-z0-9_-]+)\s*=\s*["']?(#[0-9A-Fa-f]{6})/)
+    if (!match) continue
+    var key = match[1].toLowerCase()
+    // First definition wins: colors.toml lists the plain names before the
+    // `bright_` variants, and the plain ones are the intended palette.
+    if (out[key] === undefined) out[key] = match[2]
+  }
+  return out
+}
+
+// Map a health to a colour name in that palette, with the fallback chain to
+// use when a theme does not define it.
+//
+// One table, used by the bar badge and by every row in the panel, because the
+// alternative is what this replaced: the bar calling "running" amber while the
+// panel called it accent-blue, so the same state looked like two different
+// things depending on where you saw it.
+function statusColorKeys(health) {
+  switch (String(health || "")) {
+    case "passing": return ["green"]
+    case "running": return ["yellow", "orange"]
+    case "failing": return ["red"]
+    // Stale is "we could not refresh this", which is an absence of knowledge
+    // rather than a state of the build. It gets the muted colour, not a
+    // warning colour that would compete with a real failure.
+    case "stale":   return ["muted", "dark_foreground"]
+    default:        return ["muted", "dark_foreground"]
+  }
+}
+
+// Resolve a health to a concrete colour string, or "" to mean "caller decides".
+function statusColor(palette, health) {
+  var p = palette && typeof palette === "object" ? palette : {}
+  var keys = statusColorKeys(health)
+  for (var i = 0; i < keys.length; i++) {
+    if (typeof p[keys[i]] === "string" && p[keys[i]] !== "") return p[keys[i]]
+  }
+  return ""
+}
+
 // Derive the single state the bar shows. The helper sends this precomputed;
 // the fallback keeps the function usable on a bare summary.
 function worstOf(summary) {
@@ -373,6 +428,7 @@ function notificationFor(transition) {
 if (typeof module !== "undefined") module.exports = {
   barEntry, reposIn, settingsIn, isValidSlug, slugVerdict, slugFromInput,
   parseLine, protocolAccepted, glyphFor, worstOf,
+  parsePalette, statusColor, statusColorKeys,
   ownerPrefix, repoName, rowTitle,
   relativeTime, formatDuration, tooltipFor, runParts, moveItem, removeAt,
   addRepo, setFieldAt, dropIndex, persistPayload, shouldNotify, notificationFor

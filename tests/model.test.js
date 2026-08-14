@@ -225,3 +225,42 @@ assert.equal(Model.notificationFor({ to: "failing", label: "kops", workflow: "CI
 assert.equal(Model.notificationFor({ to: "passing", label: "kops", workflow: "CI" }).urgency, "normal")
 
 console.log("model.test.js: all assertions passed")
+
+// ------------------------------------------------------------ theme palette
+
+// A real Omarchy colors.toml, trimmed. The `bright_` variants come after the
+// plain ones and must not clobber them.
+const themeToml = `
+mode = "dark"
+accent = "#89b4fa"
+muted = "#585b70"
+foreground = "#cdd6f4"
+red = "#f38ba8"
+yellow = "#f9e2af"
+orange = "#f6b6ab"
+green = "#a6e3a1"
+bright_red = "#111111"
+bright_green = "#222222"
+`
+const palette = Model.parsePalette(themeToml)
+assert.equal(palette.green, "#a6e3a1")
+assert.equal(palette.red, "#f38ba8")
+assert.equal(palette.bright_red, "#111111", "bright variants are still available")
+assert.equal(Model.parsePalette("").green, undefined)
+assert.deepEqual(Model.parsePalette(null), {})
+assert.deepEqual(Model.parsePalette("not a toml file at all"), {})
+
+// One table drives the bar badge and every row, so the same state cannot look
+// like two different things depending on where it is drawn.
+assert.equal(Model.statusColor(palette, "passing"), "#a6e3a1")
+assert.equal(Model.statusColor(palette, "running"), "#f9e2af")
+assert.equal(Model.statusColor(palette, "failing"), "#f38ba8")
+assert.equal(Model.statusColor(palette, "stale"), "#585b70")
+assert.equal(Model.statusColor(palette, "unknown"), "#585b70")
+
+// A theme without `yellow` falls back to `orange` rather than to nothing.
+assert.equal(Model.statusColor({ orange: "#ff8800" }, "running"), "#ff8800")
+// A theme defining neither hands the decision back to the caller.
+assert.equal(Model.statusColor({}, "running"), "")
+assert.equal(Model.statusColor(null, "passing"), "")
+assert.deepEqual(Model.statusColorKeys("running"), ["yellow", "orange"])
