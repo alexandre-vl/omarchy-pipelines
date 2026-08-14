@@ -76,6 +76,46 @@ Either way, the plugin does nothing until the helper exists — `omarchy plugin
 add` on its own is not enough. Then add **Pipelines** to your bar from *Bar
 settings* and restart the shell.
 
+## Remove it
+
+```sh
+omarchy plugin disable oma.pipelines
+omarchy plugin remove oma.pipelines
+```
+
+That takes the widget out of your bar and deletes the plugin folder. Two
+things live outside it and are left alone deliberately, so removing the plugin
+does not silently destroy a credential or a setting you might still want:
+
+```sh
+secret-tool clear service omarchy-pipelines account github   # the stored token
+rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/pipelines"    # the run cache
+```
+
+The **Disconnect** button in the panel clears the token without uninstalling.
+Nothing is left in `shell.json`: disabling the widget removes its entry, and
+that entry is the only configuration the plugin ever writes.
+
+## What it depends on
+
+Everything below ships with a stock Omarchy install; the plugin adds nothing to
+your system.
+
+| Needed | For |
+| --- | --- |
+| `secret-tool` (libsecret) | Storing the token in your login keyring |
+| `xdg-open` | Opening a run on GitHub |
+| `notify-send` | Failure and recovery notifications |
+| `gh` | Optional — only to import an existing token in one click |
+
+The helper is a single static-ish binary built from three Rust crates —
+[`ureq`](https://crates.io/crates/ureq) for HTTPS, and
+[`serde`](https://crates.io/crates/serde) with
+[`serde_json`](https://crates.io/crates/serde_json) for the wire format. TLS is
+`rustls`, not OpenSSL, so there is no system TLS dependency.
+
+It talks to exactly one host, `api.github.com`, and nothing else.
+
 ## Connect a GitHub account
 
 Open the panel. If you already use the GitHub CLI, **Import from GitHub CLI** is
