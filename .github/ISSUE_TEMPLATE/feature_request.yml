@@ -1,0 +1,38 @@
+name: Feature request
+description: Suggest something the Pipelines widget should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that this widget makes hard today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like it to do
+    validations:
+      required: true
+
+  - type: dropdown
+    id: api-cost
+    attributes:
+      label: Does this need more GitHub API calls?
+      description: >
+        The widget deliberately keeps a reserve of the hourly rate limit free,
+        because the same token is usually shared with the gh CLI and editor
+        tooling. Proposals that add per-repository requests need to say so.
+      options:
+        - "No — it uses data already fetched"
+        - "Yes — it needs additional requests"
+        - "I do not know"
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered

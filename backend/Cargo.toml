@@ -1,0 +1,52 @@
+[package]
+name = "omarchy-pipelines-helper"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "CI pipeline poller for the oma.pipelines Omarchy plugin"
+license = "MIT"
+repository = "https://github.com/jfg96/omarchy-pipelines"
+publish = false
+
+[[bin]]
+name = "omarchy-pipelines-helper"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+ureq = "3.4.0"
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
+# The helper holds a GitHub token and speaks to the network. Anything the
+# compiler can refuse on our behalf, it should refuse: a lint that only warns
+# is a lint that ships.
+[lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+# `unreachable_pub` is deliberately absent: it is a library lint, and in a
+# binary crate every item is already crate-private to the outside world, so it
+# only generates noise that would have to be blanket-allowed anyway.
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# A panic in the poll thread takes the widget down with it and leaves the user
+# staring at a bar that never updates, so the usual suspects are denied rather
+# than merely discouraged.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+integer_division = "deny"
+todo = "deny"
+unimplemented = "deny"
+# Documented tradeoffs: the module names read better than the lint's taste.
+module_name_repetitions = "allow"

@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  frontend:
+    name: Frontend and manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Model logic
+        run: node tests/model.test.js
+
+      - name: Manifest contract
+        run: node tests/manifest.test.js
+
+      # Every shipped script runs on a user's machine with their shell. A
+      # quoting bug here is a bug in someone's home directory.
+      - name: Shell scripts
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y shellcheck
+          shellcheck build.sh install.sh
+
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+
+      - name: Formatting
+        run: cargo fmt --manifest-path backend/Cargo.toml --all -- --check
+
+      # The lint table in Cargo.toml denies unwrap, expect, panic, indexing and
+      # unsafe outright. `-D warnings` promotes the pedantic set too, so a
+      # warning cannot accumulate quietly until nobody reads the output.
+      - name: Clippy
+        run: cargo clippy --manifest-path backend/Cargo.toml --all-targets --locked -- -D warnings
+
+      - name: Tests
+        run: cargo test --manifest-path backend/Cargo.toml --locked
+
+      - name: Build
+        run: cargo build --manifest-path backend/Cargo.toml --locked --release
+
+      # The helper is spawned by the shell with no arguments and must answer a
+      # handshake on stdout. A binary that builds but cannot do that is broken
+      # in the only way that matters.
+      - name: Handshake
+        run: |
+          set -euo pipefail
+          out=$(echo '{"id":1,"cmd":"hello","version":"0.1.0"}' \
+            | timeout 20 ./backend/target/release/omarchy-pipelines-helper \
+            | head -1)
+          echo "$out"
+          echo "$out" | grep -q '"ev":"ready"'
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      # A desktop widget holding a GitHub token has no business shipping a
+      # dependency with a known advisory against it.
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

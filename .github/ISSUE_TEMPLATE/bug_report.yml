@@ -1,0 +1,86 @@
+name: Bug report
+description: Something in the Pipelines widget does not work
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not paste a GitHub token, or the output of `gh auth token`,
+        anywhere in this issue. The helper redacts tokens from its own logs,
+        but it cannot redact what you paste by hand.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Add repository owner/name
+        2. Open the panel
+        3. ...
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: "`jq -r .version ~/.config/omarchy/plugins/oma.pipelines/manifest.json`"
+    validations:
+      required: true
+
+  - type: input
+    id: omarchy-version
+    attributes:
+      label: Omarchy version
+      description: "`cat ~/.local/share/omarchy/version`"
+    validations:
+      required: true
+
+  - type: input
+    id: helper-version
+    attributes:
+      label: Helper version
+      description: "`~/.config/omarchy/plugins/oma.pipelines/bin/omarchy-pipelines-helper --version`"
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part
+      options:
+        - The bar indicator
+        - The panel / project list
+        - Connecting a GitHub account
+        - Refresh rate or rate limiting
+        - Notifications
+        - Settings not saving
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Shell log
+      description: |
+        Lines mentioning `pipelines` from the running shell. On Omarchy:
+        `journalctl --user -b --no-pager | grep -i pipelines | tail -50`
+        Check it for tokens before pasting.
+      render: text
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked this output contains no access token
+          required: true
+        - label: I am running the latest release, or have said which version I am on
+          required: true
