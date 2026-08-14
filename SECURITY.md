@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Report privately through GitHub's
-[security advisory form](https://github.com/jfg96/omarchy-pipelines/security/advisories/new).
+[security advisory form](https://github.com/alexandre-vl/omarchy-pipelines/security/advisories/new).
 Please do not open a public issue for a vulnerability.
 
 Expect an acknowledgement within a week. If a fix is warranted it ships as a

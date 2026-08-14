@@ -9,7 +9,7 @@
 set -euo pipefail
 
 readonly plugin_id="oma.pipelines"
-readonly repository="jfg96/omarchy-pipelines"
+readonly repository="alexandre-vl/omarchy-pipelines"
 readonly repository_url="https://github.com/${repository}.git"
 readonly plugins_dir="${HOME}/.config/omarchy/plugins"
 readonly plugin_dir="${plugins_dir}/${plugin_id}"
@@ -63,7 +63,7 @@ fi
 
 origin_url=$(git -C "$plugin_dir" remote get-url origin)
 case "$origin_url" in
-  https://github.com/jfg96/omarchy-pipelines | https://github.com/jfg96/omarchy-pipelines.git | git@github.com:jfg96/omarchy-pipelines.git) ;;
+  https://github.com/alexandre-vl/omarchy-pipelines | https://github.com/alexandre-vl/omarchy-pipelines.git | git@github.com:alexandre-vl/omarchy-pipelines.git) ;;
   *) fail "installed plugin has an unexpected origin: $origin_url" ;;
 esac
 
