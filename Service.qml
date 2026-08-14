@@ -54,7 +54,7 @@ Item {
   readonly property var summary: snapshot && snapshot.summary ? snapshot.summary : ({})
   readonly property var budget: snapshot && snapshot.budget ? snapshot.budget : ({})
   readonly property var auth: snapshot && snapshot.auth ? snapshot.auth : ({})
-  readonly property var repoViews: snapshot && Array.isArray(snapshot.repos) ? snapshot.repos : []
+  readonly property var repoViews: Model.asList(snapshot ? snapshot.repos : null)
   readonly property bool connected: auth && auth.connected === true
   readonly property bool polling: snapshot && snapshot.polling === true
 
@@ -88,10 +88,24 @@ Item {
     onLoadFailed: root.pluginVersion = ""
   }
 
+  readonly property bool anyRunning: {
+    var list = Model.asList(repoViews)
+    for (var i = 0; i < list.length; i++) {
+      if (String(list[i].health || "") === "running") return true
+    }
+    return false
+  }
+
+  // One clock, two speeds. A run in flight shows its elapsed time, and at a
+  // 60-second tick that would sit on "just started" for a minute and then jump
+  // — so it ticks per second, but only while a panel is actually open and only
+  // while something is actually running. The rest of the time, which is nearly
+  // all of the time, it stays at a minute.
   Timer {
-    interval: 60000
+    interval: (root.anyViewOpen && root.anyRunning) ? 1000 : 60000
     running: true
     repeat: true
+    triggeredOnStart: true
     onTriggered: root.nowSeconds = Math.floor(Date.now() / 1000)
   }
 

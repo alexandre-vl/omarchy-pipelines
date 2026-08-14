@@ -299,7 +299,7 @@ Panel {
           // point of checking.
           var found = reply.data && reply.data.slug ? String(reply.data.slug) : ""
           var visibility = reply.data && reply.data.private ? "private" : "public"
-          root.addMessage = found === "" ? "Ready to add" : found + "  ·  " + visibility
+          root.addMessage = found === "" ? "Ready to add" : found + " · " + visibility
         } else {
           root.addState = "missing"
           root.addMessage = String(reply.error || "Not found")
@@ -893,11 +893,10 @@ Panel {
                 anchors.right: parent.right
                 anchors.rightMargin: Style.space(10)
                 y: Style.space(24)
-                spacing: 0
+                spacing: Style.space(5)
 
                 readonly property real available: width
-                readonly property var parts: Model.runParts(runRow.modelData)
-                readonly property string sep: "  ·  "
+                readonly property var parts: Model.runParts(runRow.modelData, root.nowSeconds)
 
                 Text {
                   id: branchText
@@ -914,10 +913,10 @@ Panel {
                 Row {
                   id: actorGroup
                   visible: subtitle.parts.actor !== ""
-                  spacing: 0
+                  spacing: Style.space(5)
                   Text {
                     visible: branchText.visible
-                    text: subtitle.sep
+                    text: "·"
                     color: root.dim
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
@@ -937,10 +936,10 @@ Panel {
                 Row {
                   id: durationGroup
                   visible: subtitle.parts.duration !== ""
-                  spacing: 0
+                  spacing: Style.space(5)
                   Text {
                     visible: branchText.visible || actorGroup.visible
-                    text: subtitle.sep
+                    text: "·"
                     color: root.dim
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
@@ -995,7 +994,7 @@ Panel {
             // as ?" reads as a fault; saying only what we actually know does not.
             text: !root.connected ? "Not connected"
               : root.auth.login
-                ? ("Connected as " + root.auth.login + "  ·  " + (root.auth.sourceLabel || ""))
+                ? ("Connected as " + root.auth.login + " · " + (root.auth.sourceLabel || ""))
                 : ("Connected  ·  " + (root.auth.sourceLabel || "GitHub"))
             color: root.connected ? root.foreground : root.dim
             font.family: root.fontFamily
@@ -1374,7 +1373,7 @@ Panel {
       var when = detailRepo.error !== ""
         ? "could not refresh"
         : "checked " + Model.relativeTime(detailRepo.checkedAt, nowSeconds)
-      return (owner === "" ? "" : owner + "  ·  ") + when
+      return (owner === "" ? "" : owner + " · ") + when
     }
     if (!connected) return "Not connected"
     if (repoViews.length === 0) return "No projects yet"
