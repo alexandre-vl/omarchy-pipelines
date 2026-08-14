@@ -85,6 +85,9 @@ then existence and access against the API a moment later.
 Drag the handle to reorder, or use `Alt+Up` / `Alt+Down`. The order in the list
 is the order in the panel.
 
+The panel is fully keyboard-driven: arrows move, `Enter` opens, `Escape` goes
+back, `,` opens settings, `r` refreshes, and `Tab` focuses the text field.
+
 **Mute** a project to keep polling it without letting it colour the bar — useful
 for the one repository with a known-broken nightly that would otherwise hold the
 indicator red forever.
