@@ -111,11 +111,13 @@ quiet, and a shell restart does not re-announce failures you have already seen.
 
 | | State | Meaning |
 | --- | --- | --- |
-| `●` | Failing | Latest run of some workflow failed, timed out, or needs a human |
-| `◐` | Running | Something is queued or in progress |
+| `✗` | Failing | Latest run of some workflow failed, timed out, or needs a human |
+| `↻` | Running | Something is queued or in progress |
 | `⚠` | Stale | The last poll failed; the status shown is the last one known |
-| `○` | Passing | Latest run of every workflow succeeded |
+| `✓` | Passing | Latest run of every workflow succeeded |
 | `?` | Unknown | No runs, or nothing we could interpret |
+
+The bar shows the worst state across every unmuted project.
 
 Cancelled and skipped runs are deliberately **not** failures. A run someone
 stopped on purpose, or one skipped by a path filter, is not a broken build, and
@@ -124,9 +126,15 @@ counting it as one teaches people to ignore the light.
 ## Command line
 
 ```sh
-omarchy ipc call oma.pipelines toggle
-omarchy ipc call oma.pipelines refresh
-omarchy ipc call oma.pipelines status
+omarchy shell oma.pipelines toggle
+omarchy shell oma.pipelines refresh
+omarchy shell oma.pipelines status
+```
+
+`status` prints JSON, so it composes:
+
+```sh
+omarchy shell oma.pipelines status | jq -r '.summary.worst'
 ```
 
 ## How it is put together
