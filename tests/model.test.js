@@ -264,3 +264,94 @@ assert.equal(Model.statusColor({ orange: "#ff8800" }, "running"), "#ff8800")
 assert.equal(Model.statusColor({}, "running"), "")
 assert.equal(Model.statusColor(null, "passing"), "")
 assert.deepEqual(Model.statusColorKeys("running"), ["yellow", "orange"])
+
+// -------------------------------------------------------- overview subtitle
+
+const mixedRepo = {
+  slug: "a/b", health: "failing", checkedAt: now,
+  runs: [
+    { workflow: "lint",   branch: "main",    health: "passing", updatedAt: now - 60 },
+    { workflow: "deploy", branch: "release", health: "failing", updatedAt: now - 3600 },
+    { workflow: "test",   branch: "main",    health: "passing", updatedAt: now - 120 }
+  ]
+}
+// The newest run passed; the row is red because of `deploy`. Captioning the
+// row with `lint` would name a workflow that is fine.
+assert.equal(Model.leadRun(mixedRepo).workflow, "deploy")
+assert.equal(Model.repoSubtitle(mixedRepo), "deploy  ·  release")
+assert.equal(Model.repoAge(mixedRepo, now), "1h ago", "the age is the run's, not the poll's")
+
+const runningRepo = {
+  health: "running",
+  runs: [
+    { workflow: "lint", branch: "main", health: "passing", updatedAt: now - 10 },
+    { workflow: "ci",   branch: "main", health: "running", updatedAt: now - 300 }
+  ]
+}
+assert.equal(Model.leadRun(runningRepo).workflow, "ci")
+
+// A green repo is captioned by its most recent run.
+const greenRepo = {
+  health: "passing",
+  runs: [
+    { workflow: "ci",   branch: "main", health: "passing", updatedAt: now - 30 },
+    { workflow: "lint", branch: "main", health: "passing", updatedAt: now - 900 }
+  ]
+}
+assert.equal(Model.leadRun(greenRepo).workflow, "ci")
+assert.equal(Model.repoAge(greenRepo, now), "just now")
+
+// Nothing to caption is not an error.
+assert.equal(Model.leadRun({ runs: [] }), null)
+assert.equal(Model.leadRun(null), null)
+assert.equal(Model.repoSubtitle({ runs: [] }), "")
+assert.equal(Model.repoAge({ runs: [] }, now), "")
+assert.equal(Model.repoSubtitle({ health: "passing", runs: [{ workflow: "ci" }] }), "ci",
+  "a run with no branch still captions")
+// A health with no matching run falls back rather than returning nothing.
+assert.equal(Model.leadRun({ health: "failing", runs: [{ workflow: "ci", health: "passing" }] }).workflow, "ci")
+
+// ---------------------------------------------------- QML sequence wrappers
+
+// QML hands JavaScript a sequence-backed wrapper for some list properties: it
+// indexes and it has `length`, but `Array.isArray` reports false. Guarding on
+// Array.isArray therefore threw the data away — the overview captions rendered
+// blank while the rows plainly showed seven runs each. `asList` is what stops
+// that, so every list-taking function is checked against the wrapper shape.
+function sequence(items) {
+  const wrapper = { length: items.length }
+  items.forEach((item, i) => { wrapper[i] = item })
+  return wrapper   // array-like, but Array.isArray(wrapper) === false
+}
+assert.equal(Array.isArray(sequence([1, 2])), false, "the fixture must not be a real array")
+
+assert.deepEqual(Model.asList(sequence(["a", "b"])), ["a", "b"])
+assert.deepEqual(Model.asList([1, 2]), [1, 2])
+assert.deepEqual(Model.asList(null), [])
+assert.deepEqual(Model.asList({}), [])
+assert.deepEqual(Model.asList("nope"), [])
+
+const wrappedRepo = {
+  health: "failing",
+  runs: sequence([
+    { workflow: "lint", branch: "main", health: "passing", updatedAt: now - 60 },
+    { workflow: "deploy", branch: "rel", health: "failing", updatedAt: now - 600 }
+  ])
+}
+assert.equal(Model.leadRun(wrappedRepo).workflow, "deploy", "leadRun must see through the wrapper")
+assert.equal(Model.repoSubtitle(wrappedRepo), "deploy  ·  rel")
+assert.equal(Model.repoAge(wrappedRepo, now), "10m ago")
+
+// Reordering and removal sat behind the same broken guard.
+const wrappedList = sequence([{ slug: "a/1" }, { slug: "a/2" }, { slug: "a/3" }])
+assert.deepEqual(Model.moveItem(wrappedList, 0, 2).map(r => r.slug), ["a/2", "a/3", "a/1"])
+assert.deepEqual(Model.removeAt(wrappedList, 1).map(r => r.slug), ["a/1", "a/3"])
+assert.equal(Model.addRepo(wrappedList, "a/4").length, 4)
+assert.equal(Model.setFieldAt(wrappedList, 0, "muted", true)[0].muted, true)
+assert.equal(Model.reposIn({ repos: sequence([{ slug: "a/b" }]) }).length, 1)
+assert.equal(Model.slugVerdict("a/b", sequence([{ slug: "a/b" }])).state, "duplicate")
+assert.equal(Model.persistPayload(wrappedList, {}).repos.length, 3)
+assert.ok(Model.tooltipFor({ auth: { connected: true }, repos: sequence([
+  { slug: "a/b", label: "b", health: "failing", checkedAt: now, runs: [{ workflow: "CI" }] }
+]) }, now).startsWith("b · CI failed"))
+assert.ok(Model.barEntry({ bar: { layout: { right: sequence([{ id: "oma.pipelines", repos: [] }]) } } }, "oma.pipelines"))
