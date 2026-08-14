@@ -8,6 +8,30 @@
 // QML loads this with `import "Model.js" as Model`; node loads it through the
 // `module.exports` at the bottom.
 
+// Coerce anything list-shaped into a real JavaScript array.
+//
+// `Array.isArray` is not safe on values that have crossed a QML property
+// boundary. QML hands JavaScript a sequence-backed wrapper for some list
+// properties: it indexes and it has `length`, but `Array.isArray` reports
+// false. Guarding with `Array.isArray(x) ? x : []` therefore silently
+// discarded real data — the overview captions came out blank even though the
+// rows plainly had seven runs each, and the same guard sat in front of
+// reordering and removal.
+//
+// Everything in this file that takes a list goes through here first.
+function asList(value) {
+  if (!value) return []
+  if (Array.isArray(value)) return value
+  // A string is indexable and has a length, so the duck-typing below would
+  // happily turn "main" into ["m","a","i","n"]. Anything scalar is not a list.
+  if (typeof value !== "object") return []
+  var n = Number(value.length)
+  if (!isFinite(n) || n <= 0) return []
+  var out = []
+  for (var i = 0; i < n; i++) out.push(value[i])
+  return out
+}
+
 // ---------------------------------------------------------------- shell.json
 
 // Find this plugin's entry in the bar layout, and split it into an id and the
@@ -25,9 +49,9 @@ function barEntry(config, pluginId) {
   var layout = config.bar && typeof config.bar === "object" ? config.bar.layout : null
   var regions = ["left", "center", "right"]
   for (var r = 0; r < regions.length; r++) {
-    if (layout && Array.isArray(layout[regions[r]])) groups.push(layout[regions[r]])
+    if (layout) groups.push(asList(layout[regions[r]]))
   }
-  if (Array.isArray(config.plugins)) groups.push(config.plugins)
+  groups.push(asList(config.plugins))
   for (var g = 0; g < groups.length; g++) {
     for (var e = 0; e < groups[g].length; e++) {
       var entry = groups[g][e]
@@ -46,11 +70,11 @@ function barEntry(config, pluginId) {
 // is expected rather than exceptional.
 function reposIn(settings) {
   if (!settings || typeof settings !== "object") return []
-  if (!Array.isArray(settings.repos)) return []
+  var input = asList(settings.repos)
   var out = []
   var seen = {}
-  for (var i = 0; i < settings.repos.length; i++) {
-    var raw = settings.repos[i]
+  for (var i = 0; i < input.length; i++) {
+    var raw = input[i]
     var spec = null
     // A bare string is accepted so that hand-editing shell.json does not
     // require knowing the object shape.
@@ -110,7 +134,7 @@ function slugVerdict(text, existing) {
   if (slug === "") return { state: "empty", message: "" }
   if (slug.indexOf("/") === -1) return { state: "invalid", message: "Needs owner/repository" }
   if (!isValidSlug(slug)) return { state: "invalid", message: "Not a valid repository name" }
-  var list = Array.isArray(existing) ? existing : []
+  var list = asList(existing)
   for (var i = 0; i < list.length; i++) {
     if (String(list[i].slug || "").toLowerCase() === slug.toLowerCase()) {
       return { state: "duplicate", message: "Already being watched" }
@@ -265,7 +289,7 @@ function formatDuration(seconds) {
 // One line for the bar tooltip: the most interesting repository, not the first.
 function tooltipFor(snapshot, nowSeconds) {
   var snap = snapshot && typeof snapshot === "object" ? snapshot : {}
-  var repos = Array.isArray(snap.repos) ? snap.repos : []
+  var repos = asList(snap.repos)
   if (repos.length === 0) return "No repositories yet — open to add one"
   if (snap.auth && snap.auth.connected === false) return "Not connected to GitHub"
 
@@ -278,7 +302,8 @@ function tooltipFor(snapshot, nowSeconds) {
   }
   if (!worst) return repos.length + " repositories muted"
 
-  var run = Array.isArray(worst.runs) && worst.runs.length ? worst.runs[0] : null
+  var runs = asList(worst.runs)
+  var run = runs.length ? runs[0] : null
   var when = relativeTime(worst.checkedAt, nowSeconds)
   if (!run) return worst.label + " · no runs yet"
   var verb = worst.health === "failing" ? "failed"
@@ -315,6 +340,52 @@ function rowTitle(repo) {
   return label !== "" ? label : name
 }
 
+// The run a repository row is actually about.
+//
+// A repository's health is the worst of its workflows, so the newest run is
+// often not the one that made the row red — a project can have `deploy` broken
+// while `lint` passed a minute ago. Captioning a failing row with a green
+// workflow's name is worse than captioning it with nothing.
+//
+// So: the run that justifies the row's state. The failing one when the row is
+// failing, the running one when it is running, otherwise the most recent.
+function leadRun(repo) {
+  var r = repo && typeof repo === "object" ? repo : {}
+  var runs = asList(r.runs)
+  if (runs.length === 0) return null
+  var wanted = String(r.health || "")
+  if (wanted === "failing" || wanted === "running") {
+    for (var i = 0; i < runs.length; i++) {
+      if (String(runs[i].health || "") === wanted) return runs[i]
+    }
+  }
+  return runs[0]
+}
+
+// The caption under a repository name: which workflow, and on what branch.
+// Workflow first, so that when the line is too long it is the branch that gets
+// cut rather than the name of the thing that broke.
+function repoSubtitle(repo) {
+  var run = leadRun(repo)
+  if (!run) return ""
+  var bits = []
+  if (run.workflow) bits.push(String(run.workflow))
+  if (run.branch) bits.push(String(run.branch))
+  return bits.join("  ·  ")
+}
+
+// When the row's run last changed, for the right-hand column.
+//
+// This used to show when the *poll* last succeeded, which is a fact about this
+// widget rather than about the project: "just now" on every row, always, and
+// never an answer to "how long has this been broken".
+function repoAge(repo, nowSeconds) {
+  var run = leadRun(repo)
+  var stamp = run ? Number(run.updatedAt) || 0 : 0
+  if (stamp <= 0) return ""
+  return relativeTime(stamp, nowSeconds)
+}
+
 // The parts of a run's subtitle, kept separate so each can be truncated on its
 // own terms.
 //
@@ -340,7 +411,7 @@ function runParts(run) {
 // Move an item, returning a new array. Used by drag-to-reorder and by the
 // keyboard shortcuts, so both paths provably agree.
 function moveItem(list, from, to) {
-  var array = Array.isArray(list) ? list.slice() : []
+  var array = asList(list).slice()
   if (from < 0 || from >= array.length) return array
   var target = Math.max(0, Math.min(array.length - 1, to))
   if (target === from) return array
@@ -350,14 +421,14 @@ function moveItem(list, from, to) {
 }
 
 function removeAt(list, index) {
-  var array = Array.isArray(list) ? list.slice() : []
+  var array = asList(list).slice()
   if (index < 0 || index >= array.length) return array
   array.splice(index, 1)
   return array
 }
 
 function addRepo(list, slug) {
-  var array = Array.isArray(list) ? list.slice() : []
+  var array = asList(list).slice()
   var clean = String(slug || "").trim()
   if (!isValidSlug(clean)) return array
   for (var i = 0; i < array.length; i++) {
@@ -368,7 +439,7 @@ function addRepo(list, slug) {
 }
 
 function setFieldAt(list, index, field, value) {
-  var array = Array.isArray(list) ? list.slice() : []
+  var array = asList(list).slice()
   if (index < 0 || index >= array.length) return array
   var copy = {}
   for (var key in array[index]) copy[key] = array[index][key]
@@ -391,7 +462,7 @@ function dropIndex(from, offsetPixels, rowHeight, count) {
 function persistPayload(repos, settings) {
   var defaults = settingsIn({})
   var out = { repos: [] }
-  var list = Array.isArray(repos) ? repos : []
+  var list = asList(repos)
   for (var i = 0; i < list.length; i++) {
     var repo = list[i]
     var entry = { slug: String(repo.slug) }
@@ -427,9 +498,10 @@ function notificationFor(transition) {
 
 if (typeof module !== "undefined") module.exports = {
   barEntry, reposIn, settingsIn, isValidSlug, slugVerdict, slugFromInput,
-  parseLine, protocolAccepted, glyphFor, worstOf,
+  asList, parseLine, protocolAccepted, glyphFor, worstOf,
   parsePalette, statusColor, statusColorKeys,
   ownerPrefix, repoName, rowTitle,
   relativeTime, formatDuration, tooltipFor, runParts, moveItem, removeAt,
+  leadRun, repoSubtitle, repoAge,
   addRepo, setFieldAt, dropIndex, persistPayload, shouldNotify, notificationFor
 }

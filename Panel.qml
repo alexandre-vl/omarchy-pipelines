@@ -341,6 +341,8 @@ Panel {
   // ------------------------------------------------------------- reordering
 
   readonly property real rowHeight: Style.space(34)
+  // Two lines in the overview, matching the workflow rows in the detail view.
+  readonly property real overviewRowHeight: Style.space(42)
 
   function endDrag() {
     if (dragIndex < 0) { dragOffset = 0; return }
@@ -631,7 +633,7 @@ Panel {
               required property var modelData
               required property int index
               width: parent ? parent.width : 0
-              height: root.rowHeight
+              height: root.overviewRowHeight
 
               readonly property bool hot: (root.cursorActive && root.selectedIndex === index)
                 || rowMouse.containsMouse
@@ -652,11 +654,12 @@ Panel {
               }
 
               Row {
+                id: nameRow
                 anchors.left: parent.left
                 anchors.leftMargin: Style.space(10)
                 anchors.right: rowMeta.left
                 anchors.rightMargin: Style.space(8)
-                anchors.verticalCenter: parent.verticalCenter
+                y: Style.space(6)
                 spacing: Style.space(8)
 
                 Text {
@@ -713,14 +716,14 @@ Panel {
                 id: rowMeta
                 anchors.right: parent.right
                 anchors.rightMargin: Style.space(10)
-                anchors.verticalCenter: parent.verticalCenter
+                y: Style.space(6)
                 spacing: Style.space(6)
 
                 Text {
                   anchors.verticalCenter: parent.verticalCenter
                   textFormat: Text.PlainText
                   text: overviewRow.modelData.error !== "" ? "unreachable"
-                    : Model.relativeTime(overviewRow.modelData.checkedAt, root.nowSeconds)
+                    : Model.repoAge(overviewRow.modelData, root.nowSeconds)
                   color: root.dim
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
@@ -735,6 +738,25 @@ Panel {
                   font.pixelSize: Style.font.caption
                   Behavior on opacity { enabled: root.animate; NumberAnimation { duration: 120 } }
                 }
+              }
+
+              // Which workflow the row is about. The overview used to say only
+              // that something was wrong; you had to open the subpage to find
+              // out whether it was `deploy` or `lint`.
+              Text {
+                anchors.left: nameRow.left
+                anchors.leftMargin: rowGlyph.width + Style.space(8)
+                anchors.right: parent.right
+                anchors.rightMargin: Style.space(10)
+                y: Style.space(24)
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                text: overviewRow.modelData.error !== ""
+                  ? overviewRow.modelData.error
+                  : Model.repoSubtitle(overviewRow.modelData)
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
               }
 
               MouseArea {

@@ -34,7 +34,13 @@ First release.
 
 - Project overview showing owner and repository — the owner dimmed and inline,
   because two projects called `core` in different orgs are otherwise
-  indistinguishable — with per-project status, age and a chevron.
+  indistinguishable — captioned with the workflow the row is actually about and
+  the branch it ran on, so a broken project names what broke without having to
+  be opened. The age is the run's, not the last poll's.
+- The caption names the workflow that justifies the row's state, not simply the
+  newest one: a project can have `deploy` broken while `lint` passed a minute
+  ago, and captioning a red row with a green workflow's name is worse than
+  captioning it with nothing.
 - Per-project workflow list: state, name, run number pinned right, and a
   branch · author · duration line. Each part is truncated on its own terms, so a
   long branch never pushes the duration off the end.
