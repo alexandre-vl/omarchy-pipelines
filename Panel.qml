@@ -92,10 +92,20 @@ Panel {
   // Silent when everything is green. An indicator that speaks when there is
   // nothing to say is one people learn to stop reading.
   readonly property string barCount: Model.barLabel(summary)
+  // A fresh install has nothing to report, and the unknown glyph there reads as
+  // "something is broken" rather than "nothing is set up yet". The two empty
+  // states are also distinct actions, so they get distinct glyphs: sign in
+  // versus add a project. The GitHub mark is reserved for the former — several
+  // other widgets use it, and two identical marks side by side tell the user
+  // nothing.
   readonly property string barGlyph: !backendReady ? "\u{f071}"
-    : (!connected ? "\u{f09b}" : Model.glyphFor(worst))
+    : !connected ? "\u{f09b}"
+    : repoViews.length === 0 ? "\u{f055}"
+    : Model.glyphFor(worst)
   readonly property color barColor: {
-    if (!backendReady || worst === "failing" || worst === "stale") return urgent
+    if (!backendReady) return urgent
+    if (repoViews.length === 0) return dim
+    if (worst === "failing" || worst === "stale") return urgent
     if (worst === "running") return accent
     return foreground
   }
