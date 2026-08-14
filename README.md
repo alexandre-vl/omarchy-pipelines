@@ -5,6 +5,8 @@ Track GitHub Actions across all your projects from the Omarchy bar.
 One indicator that stays silent while everything is green, turns red the moment
 a build breaks, and spends almost none of your GitHub API quota doing it.
 
+![The Pipelines panel open under the Omarchy bar, listing three projects: one running with a live timer, one failing, one passing.](assets/screenshots/overview.png)
+
 The bar shows a GitHub mark with a small status badge on it, the way a CI
 favicon works in a browser tab: a check when everything passed, a dot while
 something is running, a cross when something failed. Nothing configured yet is
