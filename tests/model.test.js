@@ -99,22 +99,6 @@ assert.ok(!Model.protocolAccepted(null, 1))
 
 // --------------------------------------------------------------- presentation
 
-// Silence when green is the entire point of the aggregate indicator.
-assert.equal(Model.barLabel({ worst: "passing", passing: 4 }), "")
-assert.equal(Model.barLabel(null), "")
-
-// The count must belong to the glyph beside it. The old label showed failing
-// and running side by side, which rendered as two bare numbers ("2 1") with
-// nothing to say which was which.
-assert.equal(Model.barLabel({ worst: "failing", failing: 2, running: 1 }), "2",
-  "the count is of the worst state only")
-assert.equal(Model.barLabel({ worst: "running", failing: 0, running: 3 }), "3")
-
-// One is implied by the glyph; the digit adds nothing.
-assert.equal(Model.barLabel({ worst: "failing", failing: 1, running: 5 }), "")
-
-// Works without the precomputed field, so a bare summary still renders.
-assert.equal(Model.barLabel({ failing: 4, running: 2 }), "4")
 assert.equal(Model.worstOf({ failing: 0, stale: 2, running: 1 }), "stale")
 assert.equal(Model.worstOf({}), "unknown")
 assert.equal(Model.worstOf({ worst: "running", failing: 9 }), "running",
@@ -171,9 +155,13 @@ assert.equal(
   "1 repositories muted"
 )
 
-assert.equal(Model.runSubtitle({ branch: "main", actor: "alex", duration: 90 }), "main · alex · 1m 30s")
-assert.equal(Model.runSubtitle({ branch: "main", duration: -1 }), "main")
-assert.equal(Model.runSubtitle(null), "")
+// Parts stay separate so each can be truncated on its own terms; joined, a
+// long branch pushed the duration off the end entirely.
+const parts = Model.runParts({ branch: "main", actor: "alex", duration: 90 })
+assert.deepEqual(parts, { branch: "main", actor: "alex", duration: "1m 30s" })
+assert.deepEqual(Model.runParts({ branch: "main", duration: -1 }),
+  { branch: "main", actor: "", duration: "" })
+assert.deepEqual(Model.runParts(null), { branch: "", actor: "", duration: "" })
 
 // -------------------------------------------------------------- list editing
 

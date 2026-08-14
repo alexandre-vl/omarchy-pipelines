@@ -5,14 +5,14 @@ Track GitHub Actions across all your projects from the Omarchy bar.
 One indicator that stays silent while everything is green, turns red the moment
 a build breaks, and spends almost none of your GitHub API quota doing it.
 
-```
-all green:      ✓
-running:        ↻  3      (breathing)
-failing:        ✗  2      (urgent colour)
-```
+The bar shows a GitHub mark with a small status badge on it, the way a CI
+favicon works in a browser tab: a green check when everything passed, an amber
+dot while something is running, a red cross when something failed. Nothing
+configured yet is just the bare mark.
 
-One glyph, and at most one number — which always counts the state the glyph is
-showing. Silent when everything is green.
+The mark itself never changes, so the widget always looks like itself; only the
+badge moves. Only the badge animates, too — it breathes while a run is in
+progress, and the mark holding still is what makes that mean something.
 
 Click it for the project list, click a project for its workflows, click a
 workflow to open the run on GitHub.
@@ -112,13 +112,14 @@ quiet, and a shell restart does not re-announce failures you have already seen.
 
 ## Status meanings
 
-| | State | Meaning |
+| Badge | State | Meaning |
 | --- | --- | --- |
-| `✗` | Failing | Latest run of some workflow failed, timed out, or needs a human |
-| `↻` | Running | Something is queued or in progress |
-| `⚠` | Stale | The last poll failed; the status shown is the last one known |
-| `✓` | Passing | Latest run of every workflow succeeded |
-| `?` | Unknown | No runs, or nothing we could interpret |
+| red cross | Failing | Latest run of some workflow failed, timed out, or needs a human |
+| amber dot | Running | Something is queued or in progress |
+| grey dot | Stale | The last poll failed; the status shown is the last one known |
+| green check | Passing | Latest run of every workflow succeeded |
+| grey dot | Unknown | No runs, or nothing we could interpret |
+| no badge | Empty | Nothing configured, or no account connected |
 
 The bar shows the worst state across every unmuted project.
 
