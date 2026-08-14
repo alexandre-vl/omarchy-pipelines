@@ -58,7 +58,8 @@ First release.
   synchronously, then existence and access against the API — and accepts a
   pasted GitHub URL as well as `owner/repository`. The add button stays inert
   until the repository has actually been confirmed.
-- Drag-to-reorder, with `Alt+Up` / `Alt+Down` going through the same code path.
+- Drag-to-reorder, with `J` / `K` on the selected row going through the same
+  code path.
 - Per-project mute, so a known-broken repository keeps being polled without
   colouring the bar.
 

@@ -24,6 +24,11 @@ Nothing about the icon animates.
 Click it for the project list, click a project for its workflows, click a
 workflow to open the run on GitHub.
 
+Each project is captioned with the workflow the row is actually about and the
+branch it ran on — the failing one when the row is red, not simply the newest —
+so a broken project names what broke without being opened. A run still in
+flight shows the time it has been going, counting up live.
+
 ## Why it is cheap to run
 
 A naive CI widget polls every repository on a timer and burns through the hourly
@@ -53,21 +58,23 @@ within its budget, not the user's job to watch it do so.
 ## Install
 
 ```sh
-omarchy plugin add https://github.com/jfg96/omarchy-pipelines.git
-```
-
-Then add **Pipelines** to your bar from *Bar settings*, or run the installer,
-which fetches a checksum-verified prebuilt helper from the latest release:
-
-```sh
+git clone https://github.com/jfg96/omarchy-pipelines.git
+cd omarchy-pipelines
 ./install.sh
 ```
 
-To build the helper from source instead (needs a Rust toolchain):
+`install.sh` installs the plugin and fetches a checksum-verified prebuilt
+helper from the latest release. To build the helper from source instead, which
+needs a Rust toolchain:
 
 ```sh
-./build.sh
+omarchy plugin add https://github.com/jfg96/omarchy-pipelines.git
+cd ~/.config/omarchy/plugins/oma.pipelines && ./build.sh
 ```
+
+Either way, the plugin does nothing until the helper exists — `omarchy plugin
+add` on its own is not enough. Then add **Pipelines** to your bar from *Bar
+settings* and restart the shell.
 
 ## Connect a GitHub account
 
@@ -89,11 +96,12 @@ Type `owner/repository` in settings, or paste a GitHub URL — `https://github.c
 works fine. The field validates as you type: shape and duplicates instantly,
 then existence and access against the API a moment later.
 
-Drag the handle to reorder, or use `Alt+Up` / `Alt+Down`. The order in the list
-is the order in the panel.
+Drag the handle to reorder, or select a row and press `J` / `K`. The order in
+the list is the order in the panel.
 
 The panel is fully keyboard-driven: arrows move, `Enter` opens, `Escape` goes
-back, `,` opens settings, `r` refreshes, and `Tab` focuses the text field.
+back, `,` opens settings, `r` refreshes, `Tab` focuses the text field, and
+`J` / `K` reorder the selected project.
 
 **Mute** a project to keep polling it without letting it colour the bar — useful
 for the one repository with a known-broken nightly that would otherwise hold the
@@ -123,9 +131,8 @@ quiet, and a shell restart does not re-announce failures you have already seen.
 | --- | --- | --- |
 | red cross | Failing | Latest run of some workflow failed, timed out, or needs a human |
 | amber dot | Running | Something is queued or in progress |
-| grey dot | Stale | The last poll failed; the status shown is the last one known |
 | green check | Passing | Latest run of every workflow succeeded |
-| grey dot | Unknown | No runs, or nothing we could interpret |
+| grey dot | Stale or unknown | The last poll failed, or there is nothing to interpret |
 | no badge | Empty | Nothing configured, or no account connected |
 
 The bar shows the worst state across every unmuted project.

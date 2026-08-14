@@ -357,12 +357,24 @@ Panel {
     engine.moveRepo(index, index + delta)
   }
 
+  // Move the row the cursor is on, and keep the cursor on it afterwards —
+  // otherwise a second press moves whatever slid into its place.
+  function shiftSelected(delta) {
+    if (selectedIndex < 0 || selectedIndex >= repos.length) return
+    var target = Math.max(0, Math.min(repos.length - 1, selectedIndex + delta))
+    if (target === selectedIndex) return
+    nudge(selectedIndex, delta)
+    selectedIndex = target
+    cursorActive = true
+  }
+
   // ------------------------------------------------------------- keyboard
 
   function moveCursor(dx, dy) {
     cursorActive = true
     var count = view === "overview" ? repoViews.length
-      : (view === "detail" && detailRepo ? detailRepo.runs.length : 0)
+      : view === "settings" ? repos.length
+      : (view === "detail" && detailRepo ? Model.asList(detailRepo.runs).length : 0)
     if (count > 0 && dy !== 0) {
       selectedIndex = Math.max(0, Math.min(count - 1, selectedIndex + dy))
     }
@@ -485,6 +497,16 @@ Panel {
       // whole panel keyboard-navigable right up to the point where you wanted
       // to change something.
       onTextKey: function(text) {
+        if (root.view === "settings") {
+          // Reordering has to use keys the catcher passes through. It declares
+          // `Keys.priority: Keys.BeforeItem` and consumes Up and Down without
+          // consulting modifiers, so an Alt+Up binding is unreachable however
+          // it is written; lowercase j/k are taken as cursor movement for the
+          // same reason, leaving the shifted pair.
+          if (text === "J") root.shiftSelected(1)
+          else if (text === "K") root.shiftSelected(-1)
+          return
+        }
         if (root.view !== "overview") return
         if (text === ",") root.pushView("settings")
         else if (text === "r" && root.engine) root.engine.refresh(true)
@@ -1040,9 +1062,20 @@ Panel {
             fontFamily: root.fontFamily
           }
 
-          // Reorderable list. Dragging moves a row; Alt+Up/Alt+Down does the
-          // same thing from the keyboard, and both go through Model.moveItem
-          // so they cannot disagree about the result.
+          Text {
+            visible: root.repos.length > 1
+            width: parent.width
+            textFormat: Text.PlainText
+            text: "Drag the handle to reorder, or J / K to move the selected row"
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            bottomPadding: Style.space(2)
+          }
+
+          // Reorderable list. Dragging moves a row; J and K do the same from
+          // the keyboard, and both go through Model.moveItem so they cannot
+          // disagree about the result.
           Column {
             id: repoEditor
             width: parent.width
@@ -1074,10 +1107,14 @@ Panel {
                   NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
                 }
 
+                readonly property bool cursored: root.cursorActive
+                  && root.selectedIndex === index && root.dragIndex < 0
+
                 Rectangle {
                   anchors.fill: parent
                   radius: Style.cornerRadius
-                  color: root.dragIndex === index ? Style.hoverFill : "transparent"
+                  color: root.dragIndex === index || repoRow.cursored
+                    ? Style.hoverFill : "transparent"
                   border.width: root.dragIndex === index ? 1 : 0
                   border.color: Style.hoverBorderColor
                 }
@@ -1141,12 +1178,6 @@ Panel {
                     tooltipText: "Remove"
                     onClicked: if (root.engine) root.engine.removeRepo(repoRow.index)
                   }
-                }
-
-                Keys.onPressed: function(event) {
-                  if (!(event.modifiers & Qt.AltModifier)) return
-                  if (event.key === Qt.Key_Up) { root.nudge(repoRow.index, -1); event.accepted = true }
-                  else if (event.key === Qt.Key_Down) { root.nudge(repoRow.index, 1); event.accepted = true }
                 }
               }
             }
