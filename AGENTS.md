@@ -15,8 +15,18 @@ repositories. Two halves, and the split is load-bearing:
   write to `shell.json`.
 - **`Panel.qml`** is built **once per monitor** (`kind: bar-widget`). It is a
   view. Anything there can only be one of belongs in `Service.qml`.
-- **`Model.js`** is pure functions, shared by both and tested under node.
+- **`Model.js`** is pure functions, shared by both and tested under node. It
+  takes clocks and palettes as arguments rather than reading them, which is the
+  only reason it can be tested at all — keep it that way.
 - **`backend/`** is the Rust helper: HTTP, auth, rate limiting, caching.
+
+`Service.qml` also reads the active theme's `colors.toml` and exposes the
+palette, because Quickshell's `Color` singleton has no green and no amber in it
+— only foreground, background, accent, muted and urgent. Status colours are
+resolved from that palette through the single `statusColor()` function in
+`Panel.qml`. Do not introduce a second one: the bar badge and the panel rows
+once had separate ideas of what "running" looked like, and the same state
+showed up amber in one place and blue in the other.
 
 If you put per-session state in `Panel.qml`, a user with two monitors gets two
 of it. That has already been the cause of real bugs in sibling plugins: two
@@ -46,6 +56,26 @@ only the first registration used.
   having emitted `started`. An exit code cannot carry that news, because nothing
   runs a shell on our behalf, so the `127` a shell would report never arrives.
   `Service.qml` handles this with a `launched` flag. Do not "simplify" it.
+- **Never guard a list with `Array.isArray`.** Use `Model.asList`. A value that
+  has crossed a QML property boundary comes back as a sequence-backed wrapper:
+  it indexes, it has a `length`, and `Array.isArray` reports **false**. Guarding
+  with `Array.isArray(x) ? x : []` therefore silently throws real data away.
+  This was not hypothetical — it blanked every overview caption against rows
+  that plainly had seven runs each, and the same guard sat in front of
+  reordering, removal, mute and the settings round trip, all of which were
+  quietly broken. `tests/model.test.js` builds the wrapper shape as a fixture;
+  any new list-taking function needs a case there.
+- **Do not probe a tool to decide whether to use it.** Attempt the real
+  operation and treat only a genuine `NotFound` spawn failure as "not
+  installed". The keyring was never once used on any machine because the
+  availability check ran `secret-tool --version`, which is not a supported flag
+  — it prints usage and exits 2. Every token silently went to the plaintext
+  fallback instead. A proxy check that fails toward the less secure option is
+  worse than no check at all.
+- **Parse the stdout of shelled-out tools line by line.** `gh` is commonly a
+  shim installed by a version manager, and mise prints its banner on **stdout**
+  ahead of the real output, so `gh auth token` returns two lines. Trimming the
+  whole stream yields a "token" with a banner glued to it.
 - **Avoid new runtime dependencies.** The helper uses `ureq`, `serde` and
   `serde_json`, and shells out to `secret-tool` and `gh` rather than linking
   their libraries. Anything new must be justified and must be present on a
@@ -86,9 +116,37 @@ fix has tested nothing.
 
 Do not state that Omarchy, Quickshell, the bar, real GitHub polling, desktop
 notifications or the settings editor were exercised unless you actually ran
-them. Those paths need a running Omarchy session. The QML can be type-checked
-without one by loading it in a throwaway Quickshell config — that catches
-unknown properties and bad imports, and it catches nothing about behaviour.
+them. Those paths need a running Omarchy session.
+
+`qmllint` is useless here — on a stock Arch install it exits 0 even for
+`Item { nonExistentProperty: 5 }`, so a clean run from it means nothing. What
+does work is loading the QML in a throwaway Quickshell config:
+
+```sh
+H=/tmp/pipecheck; rm -rf $H; mkdir -p $H/plugin
+ln -s ~/.local/share/omarchy/shell/Ui $H/Ui
+ln -s ~/.local/share/omarchy/shell/Commons $H/Commons
+cp Service.qml Panel.qml Model.js manifest.json $H/plugin/
+cat > $H/shell.qml <<'EOF'
+import QtQuick
+import Quickshell
+ShellRoot {
+  Component.onCompleted: t.start()
+  Timer { id: t; interval: 2500; onTriggered: Qt.quit() }
+  Loader { source: "plugin/Service.qml"; onStatusChanged: if (status === Loader.Error) console.warn("SERVICE LOAD ERROR") }
+  Loader { source: "plugin/Panel.qml"; onStatusChanged: if (status === Loader.Error) console.warn("PANEL LOAD ERROR") }
+}
+EOF
+qs -p $H          # NOT under QT_QPA_PLATFORM=offscreen
+```
+
+That resolves every `qs.Ui` and `qs.Commons` type and reports unknown
+properties, bad imports and syntax errors. Run it under the real Wayland
+session: offscreen has no layer-shell backend, so `KeyboardPanel` fails to
+build and the whole panel body goes unchecked.
+
+It catches nothing about behaviour. A binding that resolves can still evaluate
+to an empty string — which is exactly how the blank captions got through.
 
 Rate-limit and cache behaviour against the real API cannot be asserted from a
 unit test. If you change either, say plainly whether you verified it live.
