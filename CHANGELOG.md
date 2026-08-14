@@ -20,13 +20,14 @@ First release.
 ### The bar
 
 - A constant GitHub mark carrying a small status badge, the way a CI favicon
-  works in a browser tab: green check when everything passed, amber dot while
-  something runs, red cross when something failed, grey dot when a status could
-  not be refreshed, and a bare mark when nothing is configured. Recognition and
-  status travel on separate channels, so the widget always looks like itself and
-  the slot never changes width.
-- Only the badge animates, and only while a run is in progress. The mark holding
-  still is what makes the motion legible.
+  works in a browser tab: check when everything passed, dot while something
+  runs, cross when something failed, muted dot when a status could not be
+  refreshed, and a bare mark when nothing is configured. Recognition and status
+  travel on separate channels, so the widget always looks like itself and the
+  slot never changes width. Nothing about it animates.
+- Status colours are read from the active theme's `colors.toml` and re-read on
+  a theme change, so they are the same green, amber and red the rest of the
+  desktop uses. One table feeds the bar badge and every row in the panel.
 - Hovering gives the worst project, what happened to it, and how long ago.
 
 ### The panel

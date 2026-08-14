@@ -95,6 +95,27 @@ Item {
     onTriggered: root.nowSeconds = Math.floor(Date.now() / 1000)
   }
 
+  // The theme's terminal palette, for the status colours.
+  //
+  // Omarchy's `Color` singleton exposes foreground, background, accent, muted
+  // and urgent — there is no green and no amber in it. Every theme's
+  // colors.toml has the full palette, and those are the exact colours the rest
+  // of the desktop is already using, so reading it here is what makes a passing
+  // build the same green as everything else on screen.
+  //
+  // Loaded once per session rather than once per monitor, and watched so a
+  // theme change is picked up without a restart.
+  property var palette: ({})
+
+  FileView {
+    path: (Quickshell.env("HOME") || "") + "/.local/state/omarchy/current/theme/colors.toml"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.palette = Model.parsePalette(text())
+    onFileChanged: reload()
+    onLoadFailed: root.palette = ({})
+  }
+
   // Registered once, from the object there is one of. Opening a popup is still
   // the widget's job, so those calls are handed back to the shell, which routes
   // them to the focused monitor rather than to whichever instance spoke first.
