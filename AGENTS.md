@@ -106,7 +106,18 @@ cargo clippy --manifest-path backend/Cargo.toml --all-targets --locked -- -D war
 cargo test --manifest-path backend/Cargo.toml --locked
 ```
 
-On an Omarchy machine, also run `omarchy plugin validate .`.
+On an Omarchy machine, also run:
+
+```sh
+omarchy plugin validate .
+tests/persist.sh
+```
+
+`tests/persist.sh` covers the one path node cannot reach: whether
+`Service.persist` writes only the keys this plugin owns into a realistic
+`shell.json` and leaves neighbouring widgets alone. Adding, removing, muting
+and reordering all run through it, and all four were once broken at the same
+time, silently, with a clean build.
 
 A regression test must exercise the reported failure and must fail against the
 pre-fix code for the expected reason. A test that passes before and after the

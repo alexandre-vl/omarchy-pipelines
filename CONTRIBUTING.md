@@ -40,9 +40,11 @@ cargo fmt --manifest-path backend/Cargo.toml --all -- --check
 cargo clippy --manifest-path backend/Cargo.toml --all-targets --locked -- -D warnings
 cargo test --manifest-path backend/Cargo.toml --locked
 omarchy plugin validate .
+tests/persist.sh
 ```
 
-CI runs all of it except the last, which needs an Omarchy machine.
+CI runs all of it except the last two, which need an Omarchy machine and a
+Wayland session.
 
 ## The lints are strict on purpose
 
