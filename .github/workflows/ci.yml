@@ -39,7 +39,7 @@ jobs:
       - name: Shell scripts
         run: |
           sudo apt-get update -qq && sudo apt-get install -y shellcheck
-          shellcheck build.sh install.sh
+          shellcheck build.sh install.sh tests/persist.sh
 
   backend:
     name: Backend
@@ -90,6 +90,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       # A desktop widget holding a GitHub token has no business shipping a
       # dependency with a known advisory against it.
+      # The lockfile lives in backend/, not at the repo root. Without this the
+      # action reports "Couldn't load ./Cargo.lock" and fails the job for a
+      # missing file rather than for an advisory.
       - uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          working-directory: backend
