@@ -417,10 +417,10 @@ mod tests {
     #[test]
     fn repo_spec_splits_owner_and_name() {
         let spec = RepoSpec {
-            slug: "jfg96/omarchy-pipelines".into(),
+            slug: "alexandre-vl/omarchy-pipelines".into(),
             ..blank()
         };
-        assert_eq!(spec.parts(), Some(("jfg96", "omarchy-pipelines")));
+        assert_eq!(spec.parts(), Some(("alexandre-vl", "omarchy-pipelines")));
         assert_eq!(spec.display(), "omarchy-pipelines");
     }
 
@@ -438,7 +438,7 @@ mod tests {
     #[test]
     fn label_overrides_repo_name() {
         let spec = RepoSpec {
-            slug: "jfg96/omarchy-pipelines".into(),
+            slug: "alexandre-vl/omarchy-pipelines".into(),
             label: "Pipelines".into(),
             ..blank()
         };

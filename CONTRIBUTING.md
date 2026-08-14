@@ -15,7 +15,7 @@ below.
 You need Omarchy 4.0 or newer, a Rust toolchain and node.
 
 ```sh
-git clone https://github.com/jfg96/omarchy-pipelines.git
+git clone https://github.com/alexandre-vl/omarchy-pipelines.git
 cd omarchy-pipelines
 ./build.sh
 ```

@@ -451,8 +451,8 @@ mod tests {
     #[test]
     fn valid_slugs_split() {
         assert_eq!(
-            split_slug("jfg96/omarchy-pipelines").ok(),
-            Some(("jfg96", "omarchy-pipelines"))
+            split_slug("alexandre-vl/omarchy-pipelines").ok(),
+            Some(("alexandre-vl", "omarchy-pipelines"))
         );
         assert_eq!(split_slug("a_b/c.d").ok(), Some(("a_b", "c.d")));
     }

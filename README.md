@@ -58,7 +58,7 @@ within its budget, not the user's job to watch it do so.
 ## Install
 
 ```sh
-git clone https://github.com/jfg96/omarchy-pipelines.git
+git clone https://github.com/alexandre-vl/omarchy-pipelines.git
 cd omarchy-pipelines
 ./install.sh
 ```
@@ -68,7 +68,7 @@ helper from the latest release. To build the helper from source instead, which
 needs a Rust toolchain:
 
 ```sh
-omarchy plugin add https://github.com/jfg96/omarchy-pipelines.git
+omarchy plugin add https://github.com/alexandre-vl/omarchy-pipelines.git
 cd ~/.config/omarchy/plugins/oma.pipelines && ./build.sh
 ```
 

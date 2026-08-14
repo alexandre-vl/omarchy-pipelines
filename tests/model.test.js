@@ -35,9 +35,9 @@ assert.ok(Model.barEntry({ plugins: [{ id: "oma.pipelines", repos: [] }] }, "oma
 
 assert.deepEqual(Model.reposIn({}), [])
 assert.deepEqual(Model.reposIn({ repos: "nope" }), [])
-assert.equal(Model.reposIn({ repos: [{ slug: "jfg96/omarchy-pipelines" }] }).length, 1)
+assert.equal(Model.reposIn({ repos: [{ slug: "alexandre-vl/omarchy-pipelines" }] }).length, 1)
 // A bare string is accepted so hand-editing shell.json is practical.
-assert.equal(Model.reposIn({ repos: ["jfg96/omarchy-pipelines"] })[0].slug, "jfg96/omarchy-pipelines")
+assert.equal(Model.reposIn({ repos: ["alexandre-vl/omarchy-pipelines"] })[0].slug, "alexandre-vl/omarchy-pipelines")
 // Malformed entries are dropped rather than failing once per poll forever.
 assert.deepEqual(Model.reposIn({ repos: [{ slug: "no-slash" }, null, 7, { slug: "a/b" }] }).map(r => r.slug), ["a/b"])
 // Duplicates would cost two requests an hour for one row.
@@ -62,7 +62,7 @@ assert.equal(Model.settingsIn({ idleInterval: "junk" }).idleInterval, 180)
 
 // ----------------------------------------------------------------- validation
 
-for (const good of ["a/b", "jfg96/omarchy-pipelines", "org.name/repo.name", "a_b/c-d"]) {
+for (const good of ["a/b", "alexandre-vl/omarchy-pipelines", "org.name/repo.name", "a_b/c-d"]) {
   assert.ok(Model.isValidSlug(good), `${good} should be valid`)
 }
 for (const bad of ["", "a", "/b", "a/", "a/b/c", "a b/c", "../../etc", "a/b?x=1", "-lead/name"]) {
@@ -78,11 +78,11 @@ assert.equal(Model.slugVerdict("a/b", [{ slug: "a/b" }]).state, "duplicate")
 assert.equal(Model.slugVerdict("A/B", [{ slug: "a/b" }]).state, "duplicate")
 
 // Pasting the address bar is what people actually do.
-assert.equal(Model.slugFromInput("https://github.com/jfg96/omarchy-pipelines"), "jfg96/omarchy-pipelines")
-assert.equal(Model.slugFromInput("https://github.com/jfg96/omarchy-pipelines.git"), "jfg96/omarchy-pipelines")
-assert.equal(Model.slugFromInput("github.com/jfg96/omarchy-pipelines/actions"), "jfg96/omarchy-pipelines")
+assert.equal(Model.slugFromInput("https://github.com/alexandre-vl/omarchy-pipelines"), "alexandre-vl/omarchy-pipelines")
+assert.equal(Model.slugFromInput("https://github.com/alexandre-vl/omarchy-pipelines.git"), "alexandre-vl/omarchy-pipelines")
+assert.equal(Model.slugFromInput("github.com/alexandre-vl/omarchy-pipelines/actions"), "alexandre-vl/omarchy-pipelines")
 assert.equal(Model.slugFromInput("https://github.com/a/b?tab=readme"), "a/b")
-assert.equal(Model.slugFromInput("  jfg96/omarchy-pipelines  "), "jfg96/omarchy-pipelines")
+assert.equal(Model.slugFromInput("  alexandre-vl/omarchy-pipelines  "), "alexandre-vl/omarchy-pipelines")
 assert.equal(Model.slugFromInput(""), "")
 
 // ------------------------------------------------------------------- protocol

@@ -54,7 +54,7 @@ impl Http {
         Self {
             agent: Agent::new_with_config(config),
             user_agent: format!(
-                "omarchy-pipelines/{version} (+https://github.com/jfg96/omarchy-pipelines)"
+                "omarchy-pipelines/{version} (+https://github.com/alexandre-vl/omarchy-pipelines)"
             ),
         }
     }
