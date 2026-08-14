@@ -44,6 +44,10 @@ First release.
 - Per-project workflow list: state, name, run number pinned right, and a
   branch · author · duration line. Each part is truncated on its own terms, so a
   long branch never pushes the duration off the end.
+- A run in flight shows the time it has been going, counting up live, in the
+  same slot a finished run shows its duration. The clock behind it ticks once a
+  second only while a panel is open and something is actually running, and once
+  a minute otherwise.
 - Explicit subpage navigation: a back arrow where the status glyph sits, the
   subtitle doubling as a breadcrumb, and content that slides in the direction
   you moved. Closing on a subpage returns you to the top level with no replayed

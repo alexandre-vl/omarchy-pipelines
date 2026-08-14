@@ -371,7 +371,7 @@ function repoSubtitle(repo) {
   var bits = []
   if (run.workflow) bits.push(String(run.workflow))
   if (run.branch) bits.push(String(run.branch))
-  return bits.join("  ·  ")
+  return bits.join(" · ")
 }
 
 // When the row's run last changed, for the right-hand column.
@@ -381,9 +381,30 @@ function repoSubtitle(repo) {
 // never an answer to "how long has this been broken".
 function repoAge(repo, nowSeconds) {
   var run = leadRun(repo)
-  var stamp = run ? Number(run.updatedAt) || 0 : 0
+  if (!run) return ""
+  // A running row answers "how long has this been going", not "how long ago
+  // did it last change" — the latter is barely meaningful mid-run, and the
+  // amber glyph beside it already says the count is climbing rather than
+  // receding, so it needs no "ago".
+  var elapsed = runElapsed(run, nowSeconds)
+  if (elapsed !== "") return elapsed
+  var stamp = Number(run.updatedAt) || 0
   if (stamp <= 0) return ""
   return relativeTime(stamp, nowSeconds)
+}
+
+// How long a run has been going, for one that has not finished.
+//
+// The helper reports duration -1 while a run is in flight, because it has no
+// end to measure to. The elapsed time has to be derived against a clock, which
+// is why it takes `nowSeconds` rather than reading one: this file stays a pure
+// function of its arguments so it can be tested.
+function runElapsed(run, nowSeconds) {
+  var r = run && typeof run === "object" ? run : {}
+  if (String(r.health || "") !== "running") return ""
+  var started = Number(r.startedAt) || 0
+  if (started <= 0) return ""
+  return formatDuration(Math.max(0, (Number(nowSeconds) || 0) - started))
 }
 
 // The parts of a run's subtitle, kept separate so each can be truncated on its
@@ -397,12 +418,16 @@ function repoAge(repo, nowSeconds) {
 //
 // Draw order and truncation priority are the reverse of each other: branch,
 // author, duration left to right; duration, author, branch in what survives.
-function runParts(run) {
+function runParts(run, nowSeconds) {
   var r = run && typeof run === "object" ? run : {}
+  // The duration slot is the same slot whether the run has finished or is
+  // still going; a run in flight fills it with time so far rather than
+  // leaving a gap that reads as missing data.
+  var elapsed = runElapsed(r, nowSeconds)
   return {
     branch: String(r.branch || ""),
     actor: String(r.actor || ""),
-    duration: formatDuration(r.duration)
+    duration: elapsed !== "" ? elapsed : formatDuration(r.duration)
   }
 }
 
@@ -502,6 +527,6 @@ if (typeof module !== "undefined") module.exports = {
   parsePalette, statusColor, statusColorKeys,
   ownerPrefix, repoName, rowTitle,
   relativeTime, formatDuration, tooltipFor, runParts, moveItem, removeAt,
-  leadRun, repoSubtitle, repoAge,
+  leadRun, repoSubtitle, repoAge, runElapsed,
   addRepo, setFieldAt, dropIndex, persistPayload, shouldNotify, notificationFor
 }

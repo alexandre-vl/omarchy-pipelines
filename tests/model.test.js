@@ -157,11 +157,29 @@ assert.equal(
 
 // Parts stay separate so each can be truncated on its own terms; joined, a
 // long branch pushed the duration off the end entirely.
-const parts = Model.runParts({ branch: "main", actor: "alex", duration: 90 })
+const parts = Model.runParts({ branch: "main", actor: "alex", duration: 90 }, now)
 assert.deepEqual(parts, { branch: "main", actor: "alex", duration: "1m 30s" })
-assert.deepEqual(Model.runParts({ branch: "main", duration: -1 }),
+assert.deepEqual(Model.runParts({ branch: "main", duration: -1 }, now),
   { branch: "main", actor: "", duration: "" })
-assert.deepEqual(Model.runParts(null), { branch: "", actor: "", duration: "" })
+assert.deepEqual(Model.runParts(null, now), { branch: "", actor: "", duration: "" })
+
+// A run in flight fills the duration slot with time so far, rather than
+// leaving a gap that reads as missing data.
+const live = { branch: "main", actor: "alex", health: "running", duration: -1, startedAt: now - 200 }
+assert.equal(Model.runElapsed(live, now), "3m 20s")
+assert.equal(Model.runParts(live, now).duration, "3m 20s")
+// Only running runs get an elapsed time; a finished one keeps its real one.
+assert.equal(Model.runElapsed({ health: "passing", startedAt: now - 200 }, now), "")
+assert.equal(Model.runElapsed({ health: "running", startedAt: 0 }, now), "")
+assert.equal(Model.runElapsed(null, now), "")
+// A clock that jumped backwards must not produce a negative timer.
+assert.equal(Model.runElapsed({ health: "running", startedAt: now + 500 }, now), "0s")
+
+// The overview time column counts up while running, and counts back otherwise.
+assert.equal(Model.repoAge({ health: "running", runs: [
+  { health: "running", startedAt: now - 90, updatedAt: now - 10 }] }, now), "1m 30s")
+assert.equal(Model.repoAge({ health: "passing", runs: [
+  { health: "passing", updatedAt: now - 3600 }] }, now), "1h ago")
 
 // -------------------------------------------------------------- list editing
 
@@ -278,7 +296,7 @@ const mixedRepo = {
 // The newest run passed; the row is red because of `deploy`. Captioning the
 // row with `lint` would name a workflow that is fine.
 assert.equal(Model.leadRun(mixedRepo).workflow, "deploy")
-assert.equal(Model.repoSubtitle(mixedRepo), "deploy  ·  release")
+assert.equal(Model.repoSubtitle(mixedRepo), "deploy · release")
 assert.equal(Model.repoAge(mixedRepo, now), "1h ago", "the age is the run's, not the poll's")
 
 const runningRepo = {
@@ -339,7 +357,7 @@ const wrappedRepo = {
   ])
 }
 assert.equal(Model.leadRun(wrappedRepo).workflow, "deploy", "leadRun must see through the wrapper")
-assert.equal(Model.repoSubtitle(wrappedRepo), "deploy  ·  rel")
+assert.equal(Model.repoSubtitle(wrappedRepo), "deploy · rel")
 assert.equal(Model.repoAge(wrappedRepo, now), "10m ago")
 
 // Reordering and removal sat behind the same broken guard.
