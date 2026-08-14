@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Omarchy itself
+    url: https://github.com/basecamp/omarchy/issues
+    about: Bugs in the bar, the shell or the plugin system rather than this widget.

@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "id": "oma.pipelines",
+  "name": "Pipelines",
+  "version": "0.1.0",
+  "author": "jfg96",
+  "license": "MIT",
+  "description": "Track GitHub Actions across your projects from the Omarchy bar, with conditional requests that keep the API budget almost untouched.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Pipelines",
+    "description": "One indicator for every project's CI, silent while everything is green.",
+    "category": "Development",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "focusedInterval": 15,
+      "activeInterval": 30,
+      "idleInterval": 180,
+      "reservePercent": 25,
+      "notifyFailures": true,
+      "notifyRecoveries": false
+    },
+    "schema": [
+      {
+        "key": "focusedInterval",
+        "type": "integer",
+        "label": "Refresh while open",
+        "description": "Seconds between polls while the panel is open on any monitor. Most polls cost nothing, because GitHub answers an unchanged repository with a 304 that is not charged against the rate limit.",
+        "min": 10,
+        "max": 300,
+        "step": 5,
+        "defaultValue": 15
+      },
+      {
+        "key": "activeInterval",
+        "type": "integer",
+        "label": "Refresh while a run is in progress",
+        "description": "Seconds between polls when the panel is closed but a workflow is queued or running.",
+        "min": 15,
+        "max": 600,
+        "step": 15,
+        "defaultValue": 30
+      },
+      {
+        "key": "idleInterval",
+        "type": "integer",
+        "label": "Refresh while idle",
+        "description": "Seconds between polls when everything is green and the panel is closed.",
+        "min": 30,
+        "max": 3600,
+        "step": 30,
+        "defaultValue": 180
+      },
+      {
+        "key": "reservePercent",
+        "type": "integer",
+        "label": "API quota kept free",
+        "description": "Percentage of the hourly GitHub rate limit this widget refuses to spend. The same token is usually shared with the gh CLI and editor tooling, and exhausting it would break those rather than this. Raise it if you script against GitHub heavily; the poll interval stretches automatically to fit what is left.",
+        "min": 0,
+        "max": 90,
+        "step": 5,
+        "defaultValue": 25
+      },
+      {
+        "key": "notifyFailures",
+        "type": "boolean",
+        "label": "Notify when a workflow starts failing",
+        "description": "Send a desktop notification when a workflow crosses from any other state into a failing one. Only transitions notify, so a build that is already red stays quiet.",
+        "defaultValue": true
+      },
+      {
+        "key": "notifyRecoveries",
+        "type": "boolean",
+        "label": "Notify when a workflow recovers",
+        "description": "Send a desktop notification when a previously failing workflow goes green again.",
+        "defaultValue": false
+      }
+    ]
+  }
+}

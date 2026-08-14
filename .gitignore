@@ -1,0 +1,4 @@
+# The helper is built by build.sh or downloaded by install.sh; it is never
+# committed. A binary in the repository is a binary nobody can review.
+/bin/
+backend/target/
