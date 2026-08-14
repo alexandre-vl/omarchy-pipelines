@@ -151,12 +151,16 @@ Panel {
       selectedIndex = -1
       // Land on the connect screen when there is nothing else to show: the
       // first thing a new user can do should be the thing they need to do.
-      view = connected ? "overview" : "connect"
+      // Only corrects the view if closing left it somewhere impossible.
+      if (!connected && view !== "connect") resetToLanding()
       syncOpenState()
       Qt.callLater(function() { keyCatcher.forceActiveFocus() })
     } else {
       syncOpenState()
       resetTransient()
+      // Reset while nothing is on screen, so reopening is instant and shows
+      // the top level rather than whichever subpage was last open.
+      resetToLanding()
     }
   }
 
@@ -207,7 +211,12 @@ Panel {
         if (sequence !== root.addSequence) return
         if (reply.ok) {
           root.addState = "ok"
-          root.addMessage = reply.data && reply.data.private ? "Private repository" : "Found"
+          // "Found" said nothing useful. Naming what was found confirms the
+          // slug resolved to the repository the user meant, which is the whole
+          // point of checking.
+          var found = reply.data && reply.data.slug ? String(reply.data.slug) : ""
+          var visibility = reply.data && reply.data.private ? "private" : "public"
+          root.addMessage = found === "" ? "Ready to add" : found + "  ·  " + visibility
         } else {
           root.addState = "missing"
           root.addMessage = String(reply.error || "Not found")
@@ -322,7 +331,29 @@ Panel {
     close()
   }
 
-  onViewChanged: navSlide.restart()
+  // Return to the landing view without animating.
+  //
+  // Reopening the panel after closing it on a subpage used to replay the slide,
+  // because the reset assigned `view` and every assignment animated. The
+  // transition exists to show the user which way *they* moved; a reset they did
+  // not ask for, performed while the panel is invisible, is not that.
+  //
+  // Cheaper than any alternative: no extra Behavior, no state machine, and the
+  // animation object is never started rather than started and cancelled.
+  property bool navSuppressed: false
+
+  function resetToLanding() {
+    navSuppressed = true
+    detailIndex = -1
+    view = connected ? "overview" : "connect"
+    navSuppressed = false
+    navSlide.stop()
+    content.x = 0
+    content.opacity = 1.0
+  }
+
+  // Only animate a change the user made while looking at the panel.
+  onViewChanged: if (opened && !navSuppressed) navSlide.restart()
 
   ParallelAnimation {
     id: navSlide
@@ -364,6 +395,23 @@ Panel {
       onMoveRequested: function(dx, dy) { root.moveCursor(dx, dy) }
       onActivateRequested: root.activateCursor()
       onCloseRequested: root.goBack()
+
+      // Settings and refresh were reachable only by mouse, which made the
+      // whole panel keyboard-navigable right up to the point where you wanted
+      // to change something.
+      onTextKey: function(text) {
+        if (root.view !== "overview") return
+        if (text === ",") root.pushView("settings")
+        else if (text === "r" && root.engine) root.engine.refresh(true)
+      }
+
+      // The settings screen was fully keyboard-navigable right up to the one
+      // control you go there to use. Tab reaches the field; Escape hands focus
+      // back so the arrow keys and Escape-to-leave keep working.
+      onTabRequested: function(direction) {
+        if (root.view === "settings") addField.forceActiveFocus()
+        else if (root.view === "connect") tokenField.forceActiveFocus()
+      }
 
       Column {
         id: content
@@ -535,6 +583,7 @@ Panel {
                 spacing: Style.space(8)
 
                 Text {
+                  id: rowGlyph
                   anchors.verticalCenter: parent.verticalCenter
                   text: Model.glyphFor(overviewRow.modelData.health)
                   color: overviewRow.stateColor
@@ -546,20 +595,37 @@ Panel {
                 // called `core` in different orgs were previously
                 // indistinguishable, and the org is the part you need to tell
                 // them apart, not the part to hide.
+                //
+                // When the pair does not fit, the owner gives way first: the
+                // repository name is what identifies the row, so eliding the
+                // whole string left-to-right would cut exactly the wrong half.
                 Row {
+                  id: label
                   anchors.verticalCenter: parent.verticalCenter
                   spacing: 0
+                  // The Row sits inside a parent Row, so it cannot anchor to
+                  // the container's edges; it takes what the glyph leaves.
+                  readonly property real available: overviewRow.width
+                    - Style.space(10) - rowMeta.width - Style.space(8)
+                    - rowGlyph.width - Style.space(8)
+
                   Text {
+                    id: ownerText
                     text: Model.ownerPrefix(overviewRow.modelData.slug)
                     color: root.dim
+                    elide: Text.ElideRight
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.body
+                    width: Math.max(0, Math.min(implicitWidth, label.available - nameText.width))
                   }
                   Text {
+                    id: nameText
                     text: Model.rowTitle(overviewRow.modelData)
                     color: overviewRow.stateColor
+                    elide: Text.ElideRight
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.body
+                    width: Math.max(0, Math.min(implicitWidth, label.available))
                   }
                 }
               }
@@ -645,37 +711,102 @@ Panel {
 
           Repeater {
             model: root.detailRepo ? root.detailRepo.runs : []
-            delegate: Column {
+            // One block per workflow, covering both lines.
+            //
+            // This was a `Button` for the title with the subtitle loose beneath
+            // it, which meant the highlight covered only the title's own bounds
+            // and hovering the subtitle highlighted nothing — the row looked
+            // like two unrelated things that happened to sit near each other.
+            // One Item, one hover surface, one hit area.
+            delegate: Item {
+              id: runRow
               required property var modelData
               required property int index
               width: parent ? parent.width : 0
+              height: Style.space(42)
 
-              Button {
-                width: parent.width
-                leftAlign: true
-                bordered: false
-                iconText: Model.glyphFor(modelData.health)
-                text: modelData.workflow + "  #" + modelData.number
-                foreground: modelData.health === "failing" ? root.urgent
-                  : modelData.health === "running" ? root.accent
-                  : root.foreground
-                fontFamily: root.fontFamily
-                hasCursor: root.cursorActive && root.selectedIndex === index
-                tooltipText: modelData.message
-                onHovered: function(on) { if (on) { root.cursorActive = true; root.selectedIndex = index } }
-                onClicked: if (root.engine) root.engine.openRun(modelData.url)
+              readonly property bool hot: (root.cursorActive && root.selectedIndex === index)
+                || runMouse.containsMouse
+              readonly property color stateColor: modelData.health === "failing" ? root.urgent
+                : modelData.health === "running" ? root.accent
+                : root.foreground
+
+              Rectangle {
+                anchors.fill: parent
+                anchors.topMargin: Style.space(1)
+                anchors.bottomMargin: Style.space(1)
+                radius: Style.cornerRadius
+                color: runRow.hot ? Style.hoverFill : "transparent"
+                Behavior on color { enabled: root.animate; ColorAnimation { duration: 120 } }
               }
 
               Text {
-                x: Style.space(28)
-                width: parent.width - Style.space(28)
+                id: runGlyph
+                x: Style.space(10)
+                y: Style.space(7)
+                text: Model.glyphFor(runRow.modelData.health)
+                color: runRow.stateColor
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+              }
+
+              // Workflow names are arbitrary strings from someone else's
+              // repository — "Running Copilot Code Review" and worse. The run
+              // number is pinned to the right of the name and never elided,
+              // because a truncated "#101…" is a lie.
+              Text {
+                id: runTitle
+                anchors.left: runGlyph.right
+                anchors.leftMargin: Style.space(8)
+                anchors.right: runNumber.left
+                anchors.rightMargin: Style.space(6)
+                y: Style.space(6)
                 textFormat: Text.PlainText
                 elide: Text.ElideRight
-                text: Model.runSubtitle(modelData)
+                text: runRow.modelData.workflow
+                color: runRow.stateColor
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+              }
+
+              Text {
+                id: runNumber
+                anchors.right: parent.right
+                anchors.rightMargin: Style.space(10)
+                y: Style.space(6)
+                textFormat: Text.PlainText
+                text: "#" + runRow.modelData.number
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+              }
+
+              Text {
+                anchors.left: runTitle.left
+                anchors.right: parent.right
+                anchors.rightMargin: Style.space(10)
+                y: Style.space(24)
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                text: Model.runSubtitle(runRow.modelData)
                 color: root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
-                bottomPadding: Style.space(6)
+              }
+
+              MouseArea {
+                id: runMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onEntered: { root.cursorActive = true; root.selectedIndex = runRow.index }
+                onClicked: if (root.engine) root.engine.openRun(runRow.modelData.url)
+              }
+
+              PanelToolTip {
+                visible: runMouse.containsMouse && runRow.modelData.message !== ""
+                text: runRow.modelData.message
+                fontFamily: root.fontFamily
               }
             }
           }
@@ -884,10 +1015,16 @@ Panel {
               onTextChanged: if (text !== root.addText) root.onAddTextChanged(text)
               Keys.onReturnPressed: root.commitAdd()
               Keys.onEnterPressed: root.commitAdd()
+              Keys.onEscapePressed: keyCatcher.forceActiveFocus()
             }
 
-            // The realtime verdict. Colour carries the same information as the
-            // text so it is legible at a glance and still legible without it.
+            // The realtime verdict. Colour carries severity; the glyph carries
+            // the same information again for anyone who cannot rely on it.
+            //
+            // Every glyph here is one already proven to render in this bar —
+            // check, cross, spinner, warning. Reaching for a nicer-looking
+            // codepoint risks a missing one, and a tofu box in a validation
+            // message is worse than a plain tick.
             Row {
               width: parent.width
               spacing: Style.space(6)
@@ -896,14 +1033,21 @@ Panel {
               Text {
                 text: root.addState === "ok" ? "\u{f00c}"
                   : root.addState === "checking" ? "\u{f021}"
-                  : "\u{f071}"
+                  : root.addState === "duplicate" ? "\u{f071}"
+                  : "\u{f00d}"
                 color: root.addState === "ok" ? root.accent
-                  : root.addState === "checking" ? root.dim
+                  : (root.addState === "checking" || root.addState === "duplicate") ? root.dim
                   : root.urgent
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
 
-                RotationAnimation on rotation {
+                // Spin an intermediate property and bind `rotation` through a
+                // conditional, so a check or a cross is never left sitting at
+                // whatever angle the spinner stopped on.
+                property real spinAngle: 0
+                rotation: root.addState === "checking" ? spinAngle : 0
+
+                NumberAnimation on spinAngle {
                   running: root.addState === "checking" && root.animate
                   loops: Animation.Infinite
                   from: 0; to: 360; duration: 1100
@@ -911,7 +1055,9 @@ Panel {
               }
 
               Text {
+                width: parent.width - Style.space(20)
                 textFormat: Text.PlainText
+                elide: Text.ElideRight
                 text: root.addMessage
                 color: root.addState === "ok" ? root.foreground : root.dim
                 font.family: root.fontFamily
@@ -919,14 +1065,20 @@ Panel {
               }
             }
 
+            // Inert until the repository has actually been confirmed to exist.
+            // `enabled` alone stops the click, but a permanent border still
+            // reads as a live control, so the box only appears once pressing it
+            // would do something.
             Button {
               width: parent.width
               text: "Add project"
-              bordered: true
+              bordered: root.addState === "ok"
               enabled: root.addState === "ok"
+              opacity: root.addState === "ok" ? 1.0 : 0.45
               foreground: root.addState === "ok" ? root.foreground : root.dim
               fontFamily: root.fontFamily
               onClicked: root.commitAdd()
+              Behavior on opacity { enabled: root.animate; NumberAnimation { duration: 140 } }
             }
           }
 
@@ -991,6 +1143,7 @@ Panel {
             placeholderText: "github_pat_… or ghp_…"
             text: root.tokenText
             onTextChanged: root.tokenText = text
+            Keys.onEscapePressed: keyCatcher.forceActiveFocus()
             Keys.onReturnPressed: root.submitToken()
             Keys.onEnterPressed: root.submitToken()
           }

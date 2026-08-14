@@ -219,7 +219,11 @@ impl Engine {
                     self.open_panels = self.open_panels.saturating_sub(1);
                 }
                 Self::reply_ok(id, serde_json::json!({ "open": self.open_panels }));
-                if active && self.should_poll(false) {
+                // Unconditional: `poll_cycle` guards itself, and it is also
+                // where the login gets resolved. Gating this on `should_poll`
+                // meant opening the panel with an empty watch list did nothing
+                // at all, including not learning the account name.
+                if active {
                     self.poll_cycle(false);
                 }
             }
@@ -369,44 +373,72 @@ impl Engine {
         }
     }
 
-    fn poll_cycle(&mut self, force: bool) {
-        if !self.should_poll(force) {
-            self.publish();
-            return;
+    /// Fill in who the credential belongs to.
+    ///
+    /// A token adopted from the keyring at startup is not validated then —
+    /// blocking startup on a round trip makes the bar look broken on a laptop
+    /// that woke up without Wi-Fi. So we know a credential exists but not whose
+    /// it is, and the panel has nothing to put after "Connected as".
+    ///
+    /// This deliberately does not live inside the repository poll. It used to,
+    /// which meant a user with an empty watch list — the state every new
+    /// install starts in, and the state you are in right after clearing the
+    /// list — never resolved a login at all, because the poll short-circuits on
+    /// having nothing to poll. Identity is a fact about the account, not about
+    /// the watch list.
+    ///
+    /// Returns false if the credential turned out to be dead.
+    fn resolve_identity(&mut self, token: &str) -> bool {
+        if !self.auth.login.is_empty() {
+            return true;
         }
+        match self.provider.identify(token) {
+            Ok(identity) => {
+                self.auth.login = identity.login;
+                self.auth.scopes = identity.scopes;
+                self.auth.fine_grained = identity.fine_grained;
+                self.auth.error = String::new();
+                true
+            }
+            Err(error) => {
+                if error.is_fatal() {
+                    self.mark_disconnected(error.message());
+                    return false;
+                }
+                // Anything else is transient. Leaving the login empty means the
+                // next cycle tries again, under the governor's backoff.
+                true
+            }
+        }
+    }
+
+    fn poll_cycle(&mut self, force: bool) {
         let Some(token) = self.token() else {
             self.publish();
             return;
         };
+        if self
+            .governor
+            .lock()
+            .is_ok_and(|governor| governor.is_throttled())
+        {
+            self.publish();
+            return;
+        }
+
+        if !self.resolve_identity(&token) {
+            self.publish();
+            return;
+        }
+
+        if !self.should_poll(force) {
+            self.publish();
+            return;
+        }
 
         self.last_poll = Some(Instant::now());
         self.polling = true;
         self.publish();
-
-        // A token adopted from the keyring at startup is not validated then —
-        // blocking startup on a round trip makes the bar look broken on a
-        // laptop that woke up without Wi-Fi. The consequence is that we know a
-        // credential exists but not whose it is, and the panel was rendering
-        // that as "Connected as ?". Resolve it on the first poll that reaches
-        // the network: one request, once per session.
-        if self.auth.login.is_empty() {
-            match self.provider.identify(&token) {
-                Ok(identity) => {
-                    self.auth.login = identity.login;
-                    self.auth.scopes = identity.scopes;
-                    self.auth.fine_grained = identity.fine_grained;
-                    self.auth.error = String::new();
-                }
-                Err(error) => {
-                    if error.is_fatal() {
-                        self.mark_disconnected(error.message());
-                        self.polling = false;
-                        self.publish();
-                        return;
-                    }
-                }
-            }
-        }
 
         let now = unix_now();
         let mut fatal: Option<String> = None;

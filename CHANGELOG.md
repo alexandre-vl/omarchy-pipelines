@@ -12,6 +12,32 @@ missing.
 
 ### Fixed
 
+- Reopening the panel after closing it on a subpage replayed the navigation
+  transition and came back on the subpage. The view now resets while the panel
+  is closed, and the transition only plays for a move the user made while
+  looking at it.
+- Workflow names ran off the edge of the panel. The name elides and the run
+  number is pinned to the right, where it is never truncated — a shortened
+  `#1610…` is worse than no number at all.
+- Hovering a workflow highlighted only its title line, because the title was a
+  button and the branch/author line was loose beneath it. Each workflow is now
+  one block with one hover surface and one hit area.
+- The account name never appeared for a token adopted from storage when no
+  projects were configured, which is the state a new install and a just-cleared
+  list are both in: the poll short-circuits on having nothing to poll, and
+  identity resolution was inside it. It is now a fact about the account rather
+  than about the watch list.
+- The "Add project" button looked live before the repository had been
+  confirmed. It stays borderless and dimmed until validation succeeds.
+
+### Added
+
+- Keyboard access to the parts of the panel that previously needed a mouse:
+  `,` opens settings, `r` refreshes, `Tab` focuses the repository or token
+  field, and `Escape` hands focus back from a field.
+
+### Fixed (earlier in this cycle)
+
 - **The keyring was never used.** The check for whether `secret-tool` was
   available ran `secret-tool --version`, which is not a supported flag — it
   prints usage and exits 2. So the probe reported the keyring as unavailable on
