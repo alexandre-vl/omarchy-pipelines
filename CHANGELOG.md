@@ -10,7 +10,25 @@ missing.
 
 ## Unreleased
 
+### Changed
+
+- The bar icon is now a constant GitHub mark carrying a small status badge —
+  green check, amber dot, red cross — the way a CI favicon works in a browser
+  tab. Swapping the whole glyph between states meant the widget had no stable
+  identity in the bar; recognition and status now travel on separate channels,
+  and the slot never changes width. An empty watch list shows the bare mark.
+  The failure count is gone from the bar with it; the tooltip and the panel
+  carry the detail.
+- Only the badge animates while a run is in progress. The mark holding still is
+  what makes the motion legible.
+
 ### Fixed
+
+- A run's subtitle elided as a single string, so a long branch name pushed the
+  author and the duration off the end — and the duration is the shortest and
+  most informative part of the line. Each part is now measured on its own:
+  widths are assigned right to left, the duration is never cut, the author
+  gives way next, and the branch absorbs what is left.
 
 - Reopening the panel after closing it on a subpage replayed the navigation
   transition and came back on the subpage. The view now resets while the panel

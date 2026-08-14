@@ -178,29 +178,6 @@ function worstOf(summary) {
   return "unknown"
 }
 
-// The bar label: silent when everything is green, and otherwise exactly one
-// number, belonging to the glyph beside it.
-//
-// It used to show failing and running counts side by side, which rendered as
-// "✗ 2 1" — two bare numbers with nothing to say which was which, both in the
-// failure colour. A count is only legible when it is unambiguous which thing
-// is being counted, so the label now counts the state the glyph is already
-// showing and nothing else.
-//
-// A count of one is omitted: the glyph alone already says "something is
-// failing", and "✗ 1" adds a character without adding information.
-function barLabel(summary) {
-  var s = summary && typeof summary === "object" ? summary : {}
-  var worst = worstOf(s)
-  // Only states that are asking for attention get a number. "4 projects are
-  // green" is not news, and a permanent digit in the bar is exactly the kind
-  // of always-on detail this indicator exists to avoid.
-  if (worst !== "failing" && worst !== "stale" && worst !== "running") return ""
-  var count = Number(s[worst])
-  if (!isFinite(count) || count < 2) return ""
-  return String(count)
-}
-
 // "4m ago". Seconds are never shown: a CI dashboard that reports "3s ago"
 // invites staring at it, and the poll cadence makes that precision a lie.
 function relativeTime(unixSeconds, nowSeconds) {
@@ -283,15 +260,24 @@ function rowTitle(repo) {
   return label !== "" ? label : name
 }
 
-// A run's own one-line summary for the detail list.
-function runSubtitle(run) {
+// The parts of a run's subtitle, kept separate so each can be truncated on its
+// own terms.
+//
+// Joined into one string they had to elide as one, and since the branch comes
+// first and is by far the most variable — `megrogge/fix-omni-window-voice` is a
+// real example — a long branch pushed the author and the duration off the end
+// entirely. The duration is the shortest and the most informative per
+// character, so it is the last thing that should ever be dropped.
+//
+// Draw order and truncation priority are the reverse of each other: branch,
+// author, duration left to right; duration, author, branch in what survives.
+function runParts(run) {
   var r = run && typeof run === "object" ? run : {}
-  var bits = []
-  if (r.branch) bits.push(r.branch)
-  if (r.actor) bits.push(r.actor)
-  var duration = formatDuration(r.duration)
-  if (duration) bits.push(duration)
-  return bits.join(" · ")
+  return {
+    branch: String(r.branch || ""),
+    actor: String(r.actor || ""),
+    duration: formatDuration(r.duration)
+  }
 }
 
 // --------------------------------------------------------------- list editing
@@ -386,8 +372,8 @@ function notificationFor(transition) {
 
 if (typeof module !== "undefined") module.exports = {
   barEntry, reposIn, settingsIn, isValidSlug, slugVerdict, slugFromInput,
-  parseLine, protocolAccepted, glyphFor, barLabel,
-  worstOf, ownerPrefix, repoName, rowTitle,
-  relativeTime, formatDuration, tooltipFor, runSubtitle, moveItem, removeAt,
+  parseLine, protocolAccepted, glyphFor, worstOf,
+  ownerPrefix, repoName, rowTitle,
+  relativeTime, formatDuration, tooltipFor, runParts, moveItem, removeAt,
   addRepo, setFieldAt, dropIndex, persistPayload, shouldNotify, notificationFor
 }

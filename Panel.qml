@@ -44,7 +44,7 @@ Panel {
   readonly property bool backendReady: engine ? engine.backendReady : false
   readonly property string errorText: engine ? engine.errorText : "The pipelines engine is not loaded."
   readonly property int nowSeconds: engine ? engine.nowSeconds : 0
-  readonly property string worst: summary && summary.worst ? String(summary.worst) : "unknown"
+  readonly property string worst: Model.worstOf(summary)
 
   // ---------------------------------------------------------- per-view state
 
@@ -88,50 +88,135 @@ Panel {
 
   // ------------------------------------------------------------- bar presence
 
-  // Silent when everything is green. An indicator that speaks when there is
-  // nothing to say is one people learn to stop reading.
-  readonly property string barCount: Model.barLabel(summary)
-  // A fresh install has nothing to report, and the unknown glyph there reads as
-  // "something is broken" rather than "nothing is set up yet". The two empty
-  // states are also distinct actions, so they get distinct glyphs: sign in
-  // versus add a project. The GitHub mark is reserved for the former — several
-  // other widgets use it, and two identical marks side by side tell the user
-  // nothing.
-  readonly property string barGlyph: !backendReady ? "\u{f071}"
-    : !connected ? "\u{f09b}"
-    : repoViews.length === 0 ? "\u{f055}"
-    : Model.glyphFor(worst)
-  readonly property color barColor: {
-    if (!backendReady) return urgent
-    if (repoViews.length === 0) return dim
-    if (worst === "failing" || worst === "stale") return urgent
-    if (worst === "running") return accent
-    return foreground
+  // The mark never changes; the badge on it does.
+  //
+  // Swapping the whole glyph between check, cross, spinner and question meant
+  // the widget had no stable identity in the bar — you had to read it to know
+  // it was even this plugin. A constant GitHub mark with a small status badge
+  // is the pattern a CI favicon uses in a browser tab, and it works for the
+  // same reason: recognition and status are carried by different channels, and
+  // the slot never changes width.
+
+  // GitHub's own state palette. Semantic colours rather than theme ones,
+  // because green-pass / amber-running / red-fail is near-universal and these
+  // exact values are already contrast-tested against light and dark by GitHub.
+  readonly property color okColor: "#3fb950"
+  readonly property color busyColor: "#d29922"
+  readonly property color badColor: "#f85149"
+
+  // Empty is a state with nothing to report, so it gets no badge at all —
+  // just the mark, exactly as an unstarted tab shows a bare favicon.
+  readonly property bool badgeVisible: backendReady && connected && repoViews.length > 0
+
+  readonly property string badgeGlyph: {
+    if (!badgeVisible) return ""
+    if (worst === "passing") return "\u{f00c}"   // check
+    if (worst === "failing") return "\u{f00d}"   // cross
+    return "\u{f111}"                            // filled dot
   }
 
-  WidgetButton {
+  readonly property color badgeColor: {
+    if (worst === "passing") return okColor
+    if (worst === "failing") return badColor
+    if (worst === "running") return busyColor
+    return dim   // stale or unknown: present, but not claiming to know
+  }
+
+  // The mark itself stays the bar's own foreground and never takes a status
+  // colour — a bar full of shouting icons is one nobody reads. The one
+  // exception is the helper being gone, which is not a CI state at all.
+  readonly property color markColor: backendReady ? foreground : urgent
+
+  BarIconButton {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.barCount === "" ? root.barGlyph : root.barGlyph + "  " + root.barCount
     fontFamily: root.fontFamily
-    active: root.worst === "failing" || !root.backendReady
-    activeColor: root.urgent
     tooltipText: root.backendReady
       ? Model.tooltipFor({ repos: root.repoViews, auth: root.auth }, root.nowSeconds)
       : root.errorText
     onPressed: function(code) { root.toggle() }
+    iconComponent: badgedMark
+  }
 
-    // A run in progress makes the glyph breathe. It is the only motion in the
-    // bar, so it reads as "something is happening" without a spinner's noise.
-    SequentialAnimation on opacity {
-      running: root.worst === "running" && root.animate
-      loops: Animation.Infinite
-      alwaysRunToEnd: true
-      NumberAnimation { to: 0.45; duration: 900; easing.type: Easing.InOutSine }
-      NumberAnimation { to: 1.0; duration: 900; easing.type: Easing.InOutSine }
-    }
-    onVisibleChanged: if (!visible) opacity = 1.0
+  // Declared once and instantiated at two sizes: the bar slot and the panel
+  // hero. Duplicating the badge geometry for the second one would guarantee
+  // they drift apart.
+  component BadgedMark: Item {
+    id: mark
+    property real markSize: Style.bar.iconFont
+
+    implicitWidth: octocat.implicitWidth
+    implicitHeight: octocat.implicitHeight
+
+      Text {
+        id: octocat
+        anchors.centerIn: parent
+        text: "\u{f09b}"
+        color: root.markColor
+        font.family: root.fontFamily
+        font.pixelSize: mark.markSize
+        Behavior on color { enabled: root.animate; ColorAnimation { duration: 200 } }
+      }
+
+      Item {
+        id: badge
+        visible: root.badgeGlyph !== ""
+        // Just under half the mark, tucked into the corner with a little
+        // overlap. Larger than this and it stops reading as a badge on the
+        // mark and starts reading as a second icon beside it.
+        readonly property real diameter: Math.round(mark.markSize * 0.46)
+        width: diameter
+        height: diameter
+
+        // Positioned from the centre rather than from the Text's bounds: a
+        // glyph's advance width includes side bearings, so anchoring to its
+        // edge puts the badge somewhere slightly different in every font.
+        anchors.centerIn: parent
+        anchors.horizontalCenterOffset: Math.round(mark.markSize * 0.30)
+        anchors.verticalCenterOffset: Math.round(mark.markSize * 0.27)
+
+        // Punched out of the mark in the bar's own background, so the badge
+        // reads as sitting on top rather than colliding with the octocat's
+        // silhouette.
+        Rectangle {
+          anchors.centerIn: parent
+          width: badge.diameter * 1.45
+          height: width
+          radius: width / 2
+          color: Color.bar.background
+        }
+
+        Text {
+          anchors.centerIn: parent
+          text: root.badgeGlyph
+          color: root.badgeColor
+          font.family: root.fontFamily
+          font.pixelSize: Math.round(badge.diameter * 0.92)
+          Behavior on color { enabled: root.animate; ColorAnimation { duration: 200 } }
+        }
+
+        // Only the badge breathes, and only while something is running. The
+        // mark holding still is what makes the motion mean something.
+        SequentialAnimation on opacity {
+          running: root.worst === "running" && root.badgeVisible && root.animate
+          loops: Animation.Infinite
+          alwaysRunToEnd: true
+          NumberAnimation { to: 0.35; duration: 900; easing.type: Easing.InOutSine }
+          NumberAnimation { to: 1.0; duration: 900; easing.type: Easing.InOutSine }
+        }
+        onVisibleChanged: if (!visible) opacity = 1.0
+      }
+  }
+
+  Component {
+    id: badgedMark
+    BadgedMark { anchors.centerIn: parent; markSize: Style.bar.iconFont }
+  }
+
+  Component {
+    id: heroMark
+    BadgedMark { markSize: Style.font.display }
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -434,21 +519,11 @@ Panel {
           // In a subpage the leading glyph becomes the way out. A back arrow
           // where the icon was is the one place people already look for it,
           // and it makes the hierarchy visible instead of implied.
-          iconComponent: root.inSubpage ? backControl : statusGlyph
+          iconComponent: root.inSubpage ? backControl : heroMark
           trailingControl: root.view === "overview" ? overviewActions
             : root.view === "detail" ? detailActions : null
         }
 
-        Component {
-          id: statusGlyph
-          Text {
-            text: root.barGlyph
-            color: root.barColor
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.display
-            Behavior on color { enabled: root.animate; ColorAnimation { duration: 220 } }
-          }
-        }
 
         Component {
           id: backControl
@@ -781,17 +856,80 @@ Panel {
                 font.pixelSize: Style.font.body
               }
 
-              Text {
+              // Branch · author · duration, each truncated on its own terms.
+              //
+              // As one elided string the branch came first and ate everything:
+              // a real branch like `megrogge/fix-omni-window-voice` pushed both
+              // the author and the duration off the end. Widths are assigned
+              // right to left — duration is never cut, the author gives way
+              // next, and the branch absorbs whatever is left.
+              Row {
+                id: subtitle
                 anchors.left: runTitle.left
                 anchors.right: parent.right
                 anchors.rightMargin: Style.space(10)
                 y: Style.space(24)
-                textFormat: Text.PlainText
-                elide: Text.ElideRight
-                text: Model.runSubtitle(runRow.modelData)
-                color: root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
+                spacing: 0
+
+                readonly property real available: width
+                readonly property var parts: Model.runParts(runRow.modelData)
+                readonly property string sep: "  ·  "
+
+                Text {
+                  id: branchText
+                  visible: subtitle.parts.branch !== ""
+                  text: subtitle.parts.branch
+                  color: root.dim
+                  elide: Text.ElideRight
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  width: Math.max(0, Math.min(implicitWidth,
+                    subtitle.available - actorGroup.width - durationGroup.width))
+                }
+
+                Row {
+                  id: actorGroup
+                  visible: subtitle.parts.actor !== ""
+                  spacing: 0
+                  Text {
+                    visible: branchText.visible
+                    text: subtitle.sep
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  Text {
+                    id: actorText
+                    text: subtitle.parts.actor
+                    color: root.dim
+                    elide: Text.ElideRight
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    width: Math.max(0, Math.min(implicitWidth,
+                      subtitle.available - durationGroup.width))
+                  }
+                }
+
+                Row {
+                  id: durationGroup
+                  visible: subtitle.parts.duration !== ""
+                  spacing: 0
+                  Text {
+                    visible: branchText.visible || actorGroup.visible
+                    text: subtitle.sep
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  // No elide and no width cap: a truncated duration is a wrong
+                  // duration, and it is the cheapest thing on the line.
+                  Text {
+                    text: subtitle.parts.duration
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                }
               }
 
               MouseArea {
