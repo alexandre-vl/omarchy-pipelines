@@ -512,7 +512,7 @@ mod tests {
             serde_json::from_str(r#"{"id":1,"cmd":"configure","repos":[]}"#).expect("valid");
         match envelope.request {
             Request::Configure { settings, repos } => {
-                assert!(repos.is_empty());
+                assert_eq!(repos, [] as [RepoSpec; 0]);
                 assert_eq!(settings.idle_interval, Settings::default_idle());
             }
             other => panic!("unexpected request: {other:?}"),
