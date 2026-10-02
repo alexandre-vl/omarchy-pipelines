@@ -10,6 +10,10 @@ missing.
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.1.1
+
 ### Fixed
 
 - Works under Omarchy 4. Omarchy 4 no longer hands a third-party plugin the
