@@ -31,6 +31,39 @@ assert.equal(Model.barEntry(config, ""), null)
 // A plugin can also be listed outside the bar layout.
 assert.ok(Model.barEntry({ plugins: [{ id: "oma.pipelines", repos: [] }] }, "oma.pipelines"))
 
+// Omarchy 4 injects a scoped PluginShellApi into a third-party plugin: the bar
+// subtree as `barConfig`, and no `shellConfig` at all. Reading `shellConfig`
+// alone found no entry, and every configured repository vanished.
+assert.equal(Model.configView(config, undefined), config)
+assert.deepEqual(Model.configView(undefined, config.bar), { bar: config.bar })
+assert.equal(Model.configView(config, { layout: {} }), config, "the whole config wins: only it has plugins[]")
+assert.equal(Model.configView(undefined, undefined), null)
+assert.deepEqual(
+  Model.reposIn(Model.barEntry(Model.configView(undefined, config.bar), "oma.pipelines").settings).map(r => r.slug),
+  ["a/b"],
+  "the watch list must be readable from the bar subtree alone"
+)
+// The API's barConfig is an empty object until the shell fills it in.
+assert.equal(Model.barEntry(Model.configView(undefined, {}), "oma.pipelines"), null)
+
+// The write Omarchy 4 offers replaces the whole entry with what it is handed,
+// so this merge is all that keeps a key written by the settings editor, or by
+// a later Omarchy, alive.
+const stored = { repos: [{ slug: "a/b" }], idleInterval: 600, futureKey: "kept", notifyRecoveries: true }
+const merged = Model.withOwnedKeys(stored, { repos: [{ slug: "a/b" }, { slug: "c/d" }], idleInterval: 600 })
+assert.deepEqual(merged, { repos: [{ slug: "a/b" }, { slug: "c/d" }], idleInterval: 600, futureKey: "kept" })
+assert.equal(merged.notifyRecoveries, undefined, "an owned key the payload omits is a default, and defaults are not written")
+assert.deepEqual(Object.keys(merged), ["repos", "idleInterval", "futureKey"], "key order is kept")
+// Saving unchanged state must serialise exactly as the entry already does:
+// that is how a no-op is told apart from a write the host refused.
+assert.equal(
+  JSON.stringify(Model.withOwnedKeys(stored, Model.persistPayload(Model.reposIn(stored), Model.settingsIn(stored)))),
+  JSON.stringify(stored)
+)
+assert.equal(Model.withOwnedKeys({ id: "oma.pipelines", repos: [] }, { repos: [] }).id, "oma.pipelines", "the id is not ours to drop")
+assert.deepEqual(Model.withOwnedKeys(null, { repos: [] }), { repos: [] })
+assert.deepEqual(Model.withOwnedKeys({ futureKey: 1 }, null), { futureKey: 1 })
+
 // ------------------------------------------------------------------ repo list
 
 assert.deepEqual(Model.reposIn({}), [])

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "oma.pipelines",
   "name": "Pipelines",
-  "version": "0.1.0",
+  "version": "0.1.1-dev",
   "author": "Alexandre VARGAS",
   "license": "MIT",
   "description": "Track GitHub Actions across your projects from the Omarchy bar, with conditional requests that keep the API budget almost untouched.",

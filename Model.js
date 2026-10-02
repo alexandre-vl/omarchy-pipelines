@@ -65,6 +65,46 @@ function barEntry(config, pluginId) {
   return null
 }
 
+// The configuration as far as this plugin can see it, in the shape `barEntry`
+// reads.
+//
+// Before Omarchy 4 the shell injected itself, and it carries all of shell.json
+// as `shellConfig`. Omarchy 4 injects a capability-scoped PluginShellApi into a
+// third-party plugin instead: it has no `shellConfig` at all, only a copy of
+// the bar subtree as `barConfig`. Reading `shellConfig` alone found no entry
+// there, so every configured repository disappeared from the panel while
+// shell.json still listed them all. Either shape is accepted; the whole config
+// wins when both exist, because only it has `plugins[]`.
+function configView(shellConfig, barConfig) {
+  if (shellConfig && typeof shellConfig === "object") return shellConfig
+  if (barConfig && typeof barConfig === "object") return { bar: barConfig }
+  return null
+}
+
+// The entry to write back: `entry` with the keys this plugin owns replaced by
+// `payload`, and every other key kept exactly where it was.
+//
+// Omarchy's bar-widget settings editor writes into the same entry from the
+// schema in manifest.json, and a later Omarchy may add keys of its own. The
+// write Omarchy 4 offers a plugin replaces the whole entry with what it is
+// given, so anything not carried over here is deleted from shell.json. An
+// owned key the payload leaves out is dropped, because `persistPayload` omits
+// defaults on purpose. Key order is kept, so a write that changes nothing
+// serialises exactly as the entry already does.
+function withOwnedKeys(entry, payload) {
+  var owned = ["repos", "focusedInterval", "activeInterval", "idleInterval",
+               "reservePercent", "notifyFailures", "notifyRecoveries"]
+  var current = entry && typeof entry === "object" ? entry : {}
+  var next = payload && typeof payload === "object" ? payload : {}
+  var out = {}
+  for (var key in current) {
+    if (key in next) out[key] = next[key]
+    else if (owned.indexOf(key) === -1) out[key] = current[key]
+  }
+  for (var field in next) if (!(field in out)) out[field] = next[field]
+  return out
+}
+
 // Read the watch list out of a settings blob, dropping anything malformed.
 // A hand-edited shell.json is a supported way to configure this, so bad input
 // is expected rather than exceptional.
@@ -522,7 +562,7 @@ function notificationFor(transition) {
 }
 
 if (typeof module !== "undefined") module.exports = {
-  barEntry, reposIn, settingsIn, isValidSlug, slugVerdict, slugFromInput,
+  barEntry, configView, withOwnedKeys, reposIn, settingsIn, isValidSlug, slugVerdict, slugFromInput,
   asList, parseLine, protocolAccepted, glyphFor, worstOf,
   parsePalette, statusColor, statusColorKeys,
   ownerPrefix, repoName, rowTitle,

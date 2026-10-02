@@ -10,8 +10,18 @@ missing.
 
 ## Unreleased
 
-Nothing yet. 0.1.0 has not been tagged; everything below describes what the
-first release will contain rather than a history of changes to it.
+### Fixed
+
+- Works under Omarchy 4. Omarchy 4 no longer hands a third-party plugin the
+  shell itself, only a capability-scoped API with no `shellConfig` on it, so the
+  plugin found no configuration at all: every configured repository disappeared
+  from the panel while `shell.json` still listed them, and adding, removing,
+  muting or reordering one did nothing. The configuration is now read from the
+  API's copy of the bar, and written back through its own-entry update with
+  every key this plugin does not own carried across unchanged. Nothing needs
+  reconfiguring: the repositories already in `shell.json` come back as they
+  were.
+- A write the shell refuses is reported as a failure instead of as a save.
 
 ## 0.1.0
 

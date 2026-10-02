@@ -36,8 +36,12 @@ Item {
   // be the source: the bar builds one per monitor and injects `settings` a tick
   // after creation, so the first thing a widget can report is the default
   // rather than the persisted value.
-  readonly property var configEntry: shell && shell.shellConfig
-    ? Model.barEntry(shell.shellConfig, manifestPluginId)
+  //
+  // Omarchy 4 does not inject the shell into a third-party plugin: `shell` is a
+  // scoped PluginShellApi with the bar subtree as `barConfig` and no
+  // `shellConfig`. Model.configView reads whichever of the two the host gave.
+  readonly property var configEntry: shell
+    ? Model.barEntry(Model.configView(shell.shellConfig, shell.barConfig), manifestPluginId)
     : null
   readonly property var pluginSettings: configEntry ? configEntry.settings : ({})
   readonly property var repos: Model.reposIn(pluginSettings)
@@ -302,16 +306,29 @@ Item {
 
   // --------------------------------------------------------------- persistence
 
-  // Write the watch list back into shell.json through the shell's own mutator,
-  // so the change lands in the same file, with the same formatting, as every
-  // other setting the user can change from the UI.
+  // Write the watch list back into shell.json through the shell, so the change
+  // lands in the same file, with the same formatting, as every other setting
+  // the user can change from the UI.
+  //
+  // Which way in works depends on what the host injected. A shell injected
+  // whole runs `mutateShellConfig` over the full config. Omarchy 4's
+  // PluginShellApi still has that method but refuses it to anything that is
+  // not a full bar: it returns false without ever calling the mutator. What it
+  // offers instead is `updateEntryInline`, scoped to this plugin's own entry.
+  // So the mutator is attempted, and whether it actually ran decides whether
+  // the entry write is needed. Saying "saved" when nothing was is how every
+  // add, remove, mute and reorder failed without a word under Omarchy 4.
   function persist(nextRepos, nextTuning) {
-    if (!shell || typeof shell.mutateShellConfig !== "function") {
-      errorText = "This Omarchy build cannot save plugin settings"
-      return false
-    }
     var payload = Model.persistPayload(nextRepos, nextTuning)
+    if (writeThroughMutator(payload) || writeThroughEntry(payload)) return true
+    errorText = "This Omarchy build cannot save plugin settings"
+    return false
+  }
+
+  function writeThroughMutator(payload) {
+    if (!shell || typeof shell.mutateShellConfig !== "function") return false
     var id = manifestPluginId
+    var written = false
     shell.mutateShellConfig(function(config) {
       var groups = []
       if (config.bar && config.bar.layout) {
@@ -325,21 +342,30 @@ Item {
         for (var e = 0; e < groups[g].length; e++) {
           var entry = groups[g][e]
           if (!entry || typeof entry !== "object" || String(entry.id || "") !== id) continue
-          // Only touch the keys this plugin owns. Omarchy's own bar-widget
-          // settings editor writes into this same entry from the schema in
-          // manifest.json, and a wholesale replace here would silently discard
-          // whatever it had set — including keys added by a later Omarchy.
-          var managed = ["repos", "focusedInterval", "activeInterval", "idleInterval",
-                         "reservePercent", "notifyFailures", "notifyRecoveries"]
-          for (var m = 0; m < managed.length; m++) {
-            if (!(managed[m] in payload)) delete entry[managed[m]]
-          }
-          for (var field in payload) entry[field] = payload[field]
+          // Only touch the keys this plugin owns; Model.withOwnedKeys says
+          // which, and why the rest must survive.
+          var next = Model.withOwnedKeys(entry, payload)
+          for (var stale in entry) if (!(stale in next)) delete entry[stale]
+          for (var field in next) entry[field] = next[field]
+          written = true
           return
         }
       }
     })
-    return true
+    return written
+  }
+
+  // Omarchy 4's own-entry write. It replaces the whole entry with what it is
+  // handed, so it is handed the current entry with only the owned keys changed.
+  function writeThroughEntry(payload) {
+    if (!shell || typeof shell.updateEntryInline !== "function") return false
+    var current = Model.barEntry(Model.configView(shell.shellConfig, shell.barConfig), manifestPluginId)
+    if (!current) return false
+    var next = Model.withOwnedKeys(current.settings, payload)
+    // It reports false for a refusal and for a write that changes nothing
+    // alike, so the no-op has to be told apart here, before asking.
+    if (JSON.stringify(next) === JSON.stringify(current.settings)) return true
+    return shell.updateEntryInline(manifestPluginId, next) === true
   }
 
   function addRepo(slug) {

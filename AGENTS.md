@@ -92,6 +92,25 @@ Both write into the *same* `shell.json` entry. `Service.persist` therefore
 updates only the keys this plugin owns and leaves everything else alone. Do not
 change it to replace the entry wholesale.
 
+What `shell` is depends on the host, and both shapes must keep working:
+
+- Before Omarchy 4 it was the shell itself: `shellConfig` holds all of
+  `shell.json`, and `mutateShellConfig` runs a mutator over the whole of it.
+- Omarchy 4 injects a capability-scoped `PluginShellApi` into a third-party
+  plugin instead. It has **no `shellConfig`** — only a copy of the bar subtree as
+  `barConfig` — and its `mutateShellConfig` returns false without calling the
+  mutator for anything but a full bar. The write it does allow is
+  `updateEntryInline(id, settings)`, which replaces the plugin's whole entry
+  with `{ id, ...settings }`. Hand it the current entry passed through
+  `Model.withOwnedKeys`, never the payload alone, or the settings editor's keys
+  are deleted.
+
+Under Omarchy 4 the plugin once read nothing and wrote nothing: every configured
+repository vanished from the panel while `shell.json` still listed them, and
+`persist` reported success for writes the host had refused. `tests/persist.sh`
+now runs against both hosts, the second built from the shell's own
+`PluginShellApi.qml`.
+
 ## Validation
 
 Run everything relevant to what you touched. Before proposing a merge, run the
