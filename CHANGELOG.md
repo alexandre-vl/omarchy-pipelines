@@ -23,6 +23,14 @@ missing.
   were.
 - A write the shell refuses is reported as a failure instead of as a save.
 
+### Security
+
+- The helper's TLS library, `rustls`, is updated from 0.23.43 to 0.23.45 for
+  [GHSA-2mjx-qc3c-rqvc](https://github.com/rustls/rustls/security/advisories/GHSA-2mjx-qc3c-rqvc):
+  TLS 1.3 handshake messages were accepted across encryption-level boundaries.
+  The handshake transcript stays authenticated, so this does not let an
+  attacker alter or complete a connection to GitHub.
+
 ## 0.1.0
 
 First release.
