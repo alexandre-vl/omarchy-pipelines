@@ -37,6 +37,10 @@ to `api.github.com` and to nothing else.
   can reach a URL, so a typed `../` cannot redirect a request.
 - Query values are percent-encoded.
 - Response bodies are read with an 8 MiB ceiling.
+- Notifications go over D-Bus with `busctl`, which takes each value as data.
+  Run text — workflow names, branches, commit messages — is never handed to a
+  tool that parses it for options, is escaped before it reaches a markup body,
+  and a click only ever opens a `https://github.com/` URL, without a shell.
 - `unsafe_code` is forbidden crate-wide; `unwrap`, `expect`, `panic` and
   slice indexing are denied by lint outside tests.
 - TLS goes through `rustls` with its default verification. There is no option to

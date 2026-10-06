@@ -10,7 +10,24 @@ missing.
 
 ## Unreleased
 
-Nothing yet.
+### Changed
+
+- Failure notifications clear themselves after 10 seconds instead of staying on
+  screen until dismissed. They went out as `critical`, which Omarchy never
+  expires, so a repository with a few flaky workflows stacked up a column of
+  them. *Dismiss notifications after* in *Bar settings → Pipelines* sets the
+  time; `0` keeps them on screen as before. The bar stays red either way.
+- A notification now names the branch, who pushed and the commit, says whether
+  the run failed, timed out, failed to start or is waiting for approval, and
+  opens the run on GitHub when clicked.
+
+### Security
+
+- Notifications are sent with `busctl` instead of `notify-send`, which reads
+  options anywhere in its arguments: text from a workflow run could be taken as
+  a `notify-send` option instead of as text. Commit messages and branch names
+  are escaped before they reach the notification body, which Omarchy renders
+  as markup.
 
 ## 0.1.1
 

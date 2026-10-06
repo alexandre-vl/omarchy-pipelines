@@ -93,7 +93,7 @@ function configView(shellConfig, barConfig) {
 // serialises exactly as the entry already does.
 function withOwnedKeys(entry, payload) {
   var owned = ["repos", "focusedInterval", "activeInterval", "idleInterval",
-               "reservePercent", "notifyFailures", "notifyRecoveries"]
+               "reservePercent", "notifyFailures", "notifyRecoveries", "notifyTimeout"]
   var current = entry && typeof entry === "object" ? entry : {}
   var next = payload && typeof payload === "object" ? payload : {}
   var out = {}
@@ -137,6 +137,10 @@ function reposIn(settings) {
 
 // Tuning, clamped to the same bounds the helper enforces so the settings UI
 // cannot show a value the helper would silently reject.
+//
+// `notifyTimeout` never reaches the helper's logic, only its parser, which
+// ignores it. Its ceiling is Omarchy's instead: the notification daemon caps a
+// notification's time on screen at 30 seconds.
 function settingsIn(settings) {
   var raw = settings && typeof settings === "object" ? settings : {}
   return {
@@ -145,13 +149,22 @@ function settingsIn(settings) {
     idleInterval: clamp(numberOr(raw.idleInterval, 180), 30, 21600),
     reservePercent: clamp(numberOr(raw.reservePercent, 25), 0, 90),
     notifyFailures: raw.notifyFailures !== false,
-    notifyRecoveries: raw.notifyRecoveries === true
+    notifyRecoveries: raw.notifyRecoveries === true,
+    notifyTimeout: clamp(statedNumberOr(raw.notifyTimeout, 10), 0, 30)
   }
 }
 
 function numberOr(value, fallback) {
   var n = Number(value)
   return isFinite(n) ? n : fallback
+}
+
+// `numberOr` for a setting where 0 means something. `Number` reads null, "",
+// [] and false as 0, so an emptied field or a hand-edited null would otherwise
+// mean "keep every notification on screen" rather than "use the default".
+function statedNumberOr(value, fallback) {
+  var stated = typeof value === "number" || (typeof value === "string" && value.trim() !== "")
+  return stated ? numberOr(value, fallback) : fallback
 }
 
 function clamp(value, low, high) {
@@ -553,12 +566,114 @@ function shouldNotify(transition, settings) {
   return false
 }
 
-function notificationFor(transition) {
+// What a transition says on the desktop, how loudly, and for how long.
+//
+// Failures used to go out as `critical`, which Omarchy's notification daemon
+// keeps on screen until it is dismissed by hand — so every failure did, and a
+// repository with a few flaky scheduled workflows stacked up a column of them.
+// They now go out as `normal`, with a timeout. Nothing is lost when one clears
+// itself: the bar stays red, and the daemon keeps it in its history. A timeout
+// of 0 opts back into `critical`, the one urgency Omarchy never expires.
+//
+// The title names the repository first and the outcome last, the way the bar
+// tooltip does; `transition.run` is absent from a helper older than this file,
+// and then the title still stands on its own.
+function notificationFor(transition, settings) {
   var t = transition && typeof transition === "object" ? transition : {}
-  if (t.to === "failing") {
-    return { urgency: "critical", title: t.label + " failed", body: t.workflow }
+  var run = t.run && typeof t.run === "object" ? t.run : {}
+  var prefs = settingsIn(settings)
+  var failed = t.to === "failing"
+  var subject = []
+  if (t.label) subject.push(String(t.label))
+  if (t.workflow) subject.push(String(t.workflow))
+  var verb = failed ? failureVerb(run.conclusion) : "recovered"
+  return {
+    urgency: prefs.notifyTimeout === 0 ? "critical" : "normal",
+    timeout: prefs.notifyTimeout * 1000,
+    title: (subject.join(" · ") + " " + verb).trim(),
+    body: notificationBody(run),
+    glyph: glyphFor(failed ? "failing" : "passing"),
+    url: String(t.url || "")
   }
-  return { urgency: "normal", title: t.label + " recovered", body: t.workflow }
+}
+
+// GitHub's conclusion in the words of the title. Every conclusion the helper
+// counts as failing (`classify` in github.rs) is a different thing to go and
+// fix, so each gets its own words rather than one "failed" for all of them.
+function failureVerb(conclusion) {
+  switch (String(conclusion || "")) {
+    case "timed_out":       return "timed out"
+    case "startup_failure": return "failed to start"
+    case "action_required": return "needs approval"
+    default:                return "failed"
+  }
+}
+
+// The lines under the title: branch and author, then the commit.
+//
+// A scheduled run has no author worth naming — GitHub credits whoever last
+// edited the cron line — and its commit is just whatever the default branch
+// held at the time, so it says "scheduled" and leaves the commit out rather
+// than pointing at someone who did nothing.
+//
+// The body is markup to any daemon that advertises `body-markup`, Omarchy's
+// included, and a branch name or a commit message is written by whoever
+// pushed it. Escaped, a `<b>` in a commit message is text, not formatting.
+function notificationBody(run) {
+  var r = run && typeof run === "object" ? run : {}
+  var scheduled = String(r.event || "") === "schedule"
+  var where = []
+  if (r.branch) where.push(String(r.branch))
+  if (scheduled) where.push("scheduled")
+  else if (r.actor) where.push(String(r.actor))
+  var lines = []
+  if (where.length > 0) lines.push(where.join(" · "))
+  if (!scheduled && r.message) lines.push(String(r.message))
+  return escapeMarkup(lines.join("\n"))
+}
+
+function escapeMarkup(text) {
+  return String(text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+}
+
+// Where a click on the notification goes: a run on github.com, and nowhere
+// else. The click runs a program, so the URL is held to the one host the
+// helper talks to rather than trusted because the helper sent it.
+function runUrl(url) {
+  var raw = String(url || "")
+  return /^https:\/\/github\.com\/\S+$/.test(raw) ? raw : ""
+}
+
+// The argv that puts a notification on screen.
+//
+// D-Bus through busctl, never notify-send. notify-send parses its entire argv
+// for options, so a body of `--hint=string:omarchy-exec-argv:[…]` becomes a
+// hint instead of text — and the workflow name in that position is written by
+// whoever writes the workflow file, which on a public repository includes
+// anyone who opens a pull request. Omarchy runs that hint's argv when the
+// notification is clicked. busctl takes every value after `--` as one typed
+// argument, verbatim; Omarchy's own omarchy-notification-send uses it for the
+// same reason.
+//
+// The click rides in Omarchy's `omarchy-exec-argv` hint: an argv the daemon
+// runs without a shell, and still runs after a shell restart. A daemon that
+// does not know the hint ignores it.
+function notifyCommand(note) {
+  var n = note && typeof note === "object" ? note : {}
+  var hints = ["urgency", "y", n.urgency === "critical" ? "2" : "1"]
+  if (n.glyph) hints.push("omarchy-glyph", "s", String(n.glyph))
+  var url = runUrl(n.url)
+  if (url !== "") hints.push("omarchy-exec-argv", "s", JSON.stringify(["xdg-open", url]))
+  var timeout = Math.round(Number(n.timeout))
+  return [
+    "busctl", "--user", "--quiet", "--", "call",
+    "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+    "org.freedesktop.Notifications", "Notify", "susssasa{sv}i",
+    // app name, replaces id, app icon, summary, body
+    "Pipelines", "0", "", String(n.title || ""), String(n.body || ""),
+    // no actions; then the hints as (key, type, value) triples
+    "0", String(hints.length / 3)
+  ].concat(hints, [String(isFinite(timeout) ? timeout : -1)])
 }
 
 if (typeof module !== "undefined") module.exports = {
@@ -568,5 +683,6 @@ if (typeof module !== "undefined") module.exports = {
   ownerPrefix, repoName, rowTitle,
   relativeTime, formatDuration, tooltipFor, runParts, moveItem, removeAt,
   leadRun, repoSubtitle, repoAge, runElapsed,
-  addRepo, setFieldAt, dropIndex, persistPayload, shouldNotify, notificationFor
+  addRepo, setFieldAt, dropIndex, persistPayload, shouldNotify, notificationFor,
+  notificationBody, escapeMarkup, runUrl, notifyCommand
 }

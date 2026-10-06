@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "oma.pipelines",
   "name": "Pipelines",
-  "version": "0.1.1",
+  "version": "0.2.0-dev",
   "author": "Alexandre VARGAS",
   "license": "MIT",
   "description": "Track GitHub Actions across your projects from the Omarchy bar, with conditional requests that keep the API budget almost untouched.",
@@ -27,7 +27,8 @@
       "idleInterval": 180,
       "reservePercent": 25,
       "notifyFailures": true,
-      "notifyRecoveries": false
+      "notifyRecoveries": false,
+      "notifyTimeout": 10
     },
     "schema": [
       {
@@ -83,6 +84,16 @@
         "label": "Notify when a workflow recovers",
         "description": "Send a desktop notification when a previously failing workflow goes green again.",
         "defaultValue": false
+      },
+      {
+        "key": "notifyTimeout",
+        "type": "integer",
+        "label": "Dismiss notifications after",
+        "description": "Seconds a notification stays on screen before it clears itself. The bar stays red either way, and clicking a notification opens the run. Set 0 to keep each one on screen until you dismiss it.",
+        "min": 0,
+        "max": 30,
+        "step": 5,
+        "defaultValue": 10
       }
     ]
   }

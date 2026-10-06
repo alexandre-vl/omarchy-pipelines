@@ -254,12 +254,7 @@ Item {
 
     case "transition":
       if (Model.shouldNotify(event, pluginSettings)) {
-        var note = Model.notificationFor(event)
-        Quickshell.execDetached([
-          "notify-send", "-a", "Pipelines",
-          "-u", note.urgency,
-          note.title, note.body
-        ])
+        Quickshell.execDetached(Model.notifyCommand(Model.notificationFor(event, pluginSettings)))
       }
       break
 

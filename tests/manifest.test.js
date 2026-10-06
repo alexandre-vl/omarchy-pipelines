@@ -119,6 +119,23 @@ for (const [key, [low, high]] of Object.entries(helperClamps)) {
   assert.ok(field.max <= high, `'${key}' max ${field.max} is above the helper's ceiling ${high}`)
 }
 
+// --------------------------------------------- schema agrees with the Model
+
+// The settings editor seeds a control from `defaults`, and Model.settingsIn
+// decides what an unset key means. Two answers is a control that shows one
+// value while the plugin acts on another.
+const Model = require(path.join(root, "Model.js"))
+const modelDefaults = Model.settingsIn({})
+for (const [key, value] of Object.entries(defaults)) {
+  assert.equal(modelDefaults[key], value, `'${key}' defaults to ${value} here but ${modelDefaults[key]} in Model.js`)
+}
+for (const field of schema.filter(f => f.type === "integer")) {
+  for (const edge of [field.min, field.max]) {
+    assert.equal(Model.settingsIn({ [field.key]: edge })[field.key], edge,
+      `the editor offers ${edge} for '${field.key}', and Model.settingsIn must not change it`)
+  }
+}
+
 // --------------------------------------------------------- version agreement
 
 const cargo = fs.readFileSync(path.join(root, "backend", "Cargo.toml"), "utf8")

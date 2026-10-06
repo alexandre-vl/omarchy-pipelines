@@ -105,7 +105,7 @@ your system.
 | --- | --- |
 | `secret-tool` (libsecret) | Storing the token in your login keyring |
 | `xdg-open` | Opening a run on GitHub |
-| `notify-send` | Failure and recovery notifications |
+| `busctl` (systemd) | Failure and recovery notifications |
 | `gh` | Optional — only to import an existing token in one click |
 
 The helper is a single static-ish binary built from three Rust crates —
@@ -161,9 +161,12 @@ natively. The project list is edited in the panel.
 | API quota kept free | 25% | Share of the hourly limit never spent |
 | Notify on failure | on | Desktop notification when a workflow starts failing |
 | Notify on recovery | off | Desktop notification when it goes green again |
+| Dismiss notifications after | 10s | Time on screen; `0` keeps each one until you dismiss it |
 
 Notifications fire on *transitions* only, so a build that is already red stays
 quiet, and a shell restart does not re-announce failures you have already seen.
+Each one names the branch, who pushed and the commit, and clicking it opens the
+run on GitHub.
 
 ## Status meanings
 

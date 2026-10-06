@@ -403,6 +403,12 @@ pub enum Event {
         from: Health,
         to: Health,
         url: String,
+        /// The run that crossed, in the shape the panel already draws. The
+        /// notification takes its branch, author, commit and conclusion from
+        /// here: the snapshot holding this run is published after this event,
+        /// so the shell has nowhere else to look them up. Boxed because a
+        /// whole run inline makes every `Event` that much larger.
+        run: Box<RunView>,
     },
 }
 
@@ -515,6 +521,21 @@ mod tests {
                 assert_eq!(repos, [] as [RepoSpec; 0]);
                 assert_eq!(settings.idle_interval, Settings::default_idle());
             }
+            other => panic!("unexpected request: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn configure_ignores_settings_only_the_shell_uses() {
+        // The shell sends every setting it owns, including ones that only
+        // shape its own notifications. Refusing an unknown key here would
+        // refuse the whole watch list along with it.
+        let envelope: Envelope = serde_json::from_str(
+            r#"{"id":1,"cmd":"configure","repos":[],"settings":{"idleInterval":600,"notifyTimeout":0}}"#,
+        )
+        .expect("valid");
+        match envelope.request {
+            Request::Configure { settings, .. } => assert_eq!(settings.idle_interval, 600),
             other => panic!("unexpected request: {other:?}"),
         }
     }

@@ -17,8 +17,8 @@ use crate::auth::{self, Credential};
 use crate::cache::Cache;
 use crate::http::Http;
 use crate::protocol::{
-    AuthView, Envelope, Event, Health, RepoSpec, RepoView, Request, Settings, Snapshot, Summary,
-    TokenSource, TokenStorage, PROTOCOL,
+    AuthView, Envelope, Event, Health, RepoSpec, RepoView, Request, RunView, Settings, Snapshot,
+    Summary, TokenSource, TokenStorage, PROTOCOL,
 };
 use crate::provider::github::GitHub;
 use crate::provider::{Fetch, Provider, ProviderError};
@@ -518,28 +518,7 @@ impl Engine {
             .max()
             .unwrap_or(Health::Unknown);
 
-        let mut transitions = Vec::new();
-        for run in &runs {
-            let key = format!("{}#{}", spec.slug, run.workflow);
-            let before = self.previous.insert(key, run.health);
-            // A first sighting is not a transition. Announcing every workflow
-            // as "newly failing" the first time the widget starts would make
-            // the notifications worthless.
-            if let Some(before) = before {
-                if before != run.health
-                    && (run.health == Health::Failing || before == Health::Failing)
-                {
-                    transitions.push(Event::Transition {
-                        slug: spec.slug.clone(),
-                        label: spec.display().to_string(),
-                        workflow: run.workflow.clone(),
-                        from: before,
-                        to: run.health,
-                        url: run.url.clone(),
-                    });
-                }
-            }
-        }
+        let transitions = detect_transitions(&mut self.previous, spec, &runs);
 
         self.views.insert(
             spec.slug.clone(),
@@ -711,8 +690,137 @@ impl Engine {
     }
 }
 
+/// Every workflow in `runs` that crossed into or out of a failing state since
+/// it was last seen, recording each one's health in `previous` as it goes.
+fn detect_transitions(
+    previous: &mut HashMap<String, Health>,
+    spec: &RepoSpec,
+    runs: &[RunView],
+) -> Vec<Event> {
+    let mut transitions = Vec::new();
+    for run in runs {
+        let key = format!("{}#{}", spec.slug, run.workflow);
+        let before = previous.insert(key, run.health);
+        // A first sighting is not a transition. Announcing every workflow as
+        // "newly failing" the first time the widget starts would make the
+        // notifications worthless.
+        if let Some(before) = before {
+            if before != run.health && (run.health == Health::Failing || before == Health::Failing)
+            {
+                transitions.push(Event::Transition {
+                    slug: spec.slug.clone(),
+                    label: spec.display().to_string(),
+                    workflow: run.workflow.clone(),
+                    from: before,
+                    to: run.health,
+                    url: run.url.clone(),
+                    run: Box::new(run.clone()),
+                });
+            }
+        }
+    }
+    transitions
+}
+
 fn unix_now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
+}
+
+#[cfg(test)]
+mod tests {
+    // Tests assert; a failed assertion is the point, so the panic-free
+    // lints that guard the poll loop are relaxed here and only here.
+    #![allow(clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
+
+    use super::*;
+
+    fn spec() -> RepoSpec {
+        RepoSpec {
+            slug: "alexandre-vl/omarchy-pipelines".into(),
+            label: String::new(),
+            branch: String::new(),
+            workflow: String::new(),
+            muted: false,
+        }
+    }
+
+    fn run(health: Health, conclusion: &str) -> RunView {
+        RunView {
+            id: 7,
+            workflow: "CI".into(),
+            branch: "main".into(),
+            event: "push".into(),
+            status: "completed".into(),
+            conclusion: conclusion.into(),
+            health,
+            url: "https://github.com/alexandre-vl/omarchy-pipelines/actions/runs/7".into(),
+            number: 42,
+            actor: "octocat".into(),
+            commit: "abc1234".into(),
+            message: "fix: the thing".into(),
+            started_at: 1_700_000_000,
+            updated_at: 1_700_000_090,
+            duration: 90,
+        }
+    }
+
+    /// What the shell actually receives: the events as JSON lines.
+    fn wire(events: &[Event]) -> Vec<serde_json::Value> {
+        events
+            .iter()
+            .map(|event| serde_json::to_value(event).expect("serializable"))
+            .collect()
+    }
+
+    #[test]
+    fn a_first_sighting_is_not_a_transition() {
+        let mut previous = HashMap::new();
+        let events = detect_transitions(&mut previous, &spec(), &[run(Health::Failing, "failure")]);
+        assert_eq!(wire(&events), [] as [serde_json::Value; 0]);
+    }
+
+    #[test]
+    fn a_transition_carries_the_run_the_notification_describes() {
+        let mut previous = HashMap::new();
+        detect_transitions(&mut previous, &spec(), &[run(Health::Passing, "success")]);
+        let events = wire(&detect_transitions(
+            &mut previous,
+            &spec(),
+            &[run(Health::Failing, "timed_out")],
+        ));
+
+        assert_eq!(events.len(), 1);
+        let event = &events[0];
+        assert_eq!(event["ev"], "transition");
+        assert_eq!(event["from"], "passing");
+        assert_eq!(event["to"], "failing");
+        assert_eq!(event["label"], "omarchy-pipelines");
+        // The snapshot carrying this run is published after the event, so
+        // everything the notification shows has to arrive with it.
+        assert_eq!(event["run"]["branch"], "main");
+        assert_eq!(event["run"]["actor"], "octocat");
+        assert_eq!(event["run"]["event"], "push");
+        assert_eq!(event["run"]["conclusion"], "timed_out");
+        assert_eq!(event["run"]["message"], "fix: the thing");
+        assert_eq!(event["run"]["url"], event["url"]);
+    }
+
+    #[test]
+    fn only_crossings_into_or_out_of_failing_are_reported() {
+        let mut previous = HashMap::new();
+        detect_transitions(&mut previous, &spec(), &[run(Health::Failing, "failure")]);
+        let recovered = wire(&detect_transitions(
+            &mut previous,
+            &spec(),
+            &[run(Health::Passing, "success")],
+        ));
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0]["from"], "failing");
+        assert_eq!(recovered[0]["to"], "passing");
+
+        let started = detect_transitions(&mut previous, &spec(), &[run(Health::Running, "")]);
+        assert_eq!(wire(&started), [] as [serde_json::Value; 0]);
+    }
 }

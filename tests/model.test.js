@@ -60,6 +60,15 @@ assert.equal(
   JSON.stringify(Model.withOwnedKeys(stored, Model.persistPayload(Model.reposIn(stored), Model.settingsIn(stored)))),
   JSON.stringify(stored)
 )
+// A notification timeout of 0 is falsy and is not the default, so it is the
+// value a careless merge would lose on the next add, remove or reorder.
+const sticky = { repos: [{ slug: "a/b" }], notifyTimeout: 0, futureKey: "kept" }
+assert.equal(
+  JSON.stringify(Model.withOwnedKeys(sticky, Model.persistPayload(Model.reposIn(sticky), Model.settingsIn(sticky)))),
+  JSON.stringify(sticky)
+)
+assert.equal(Model.withOwnedKeys({ notifyTimeout: 20 }, {}).notifyTimeout, undefined,
+  "notifyTimeout is owned: a payload without it means the default")
 assert.equal(Model.withOwnedKeys({ id: "oma.pipelines", repos: [] }, { repos: [] }).id, "oma.pipelines", "the id is not ours to drop")
 assert.deepEqual(Model.withOwnedKeys(null, { repos: [] }), { repos: [] })
 assert.deepEqual(Model.withOwnedKeys({ futureKey: 1 }, null), { futureKey: 1 })
@@ -83,6 +92,20 @@ const defaults = Model.settingsIn({})
 assert.equal(defaults.idleInterval, 180)
 assert.equal(defaults.notifyFailures, true)
 assert.equal(defaults.notifyRecoveries, false)
+assert.equal(defaults.notifyTimeout, 10)
+
+// 0 means "keep it on screen", so only a stated number may mean 0. `Number`
+// reads null, "" and [] as 0, which would pin every notification to the screen
+// for anyone whose settings editor wrote an emptied field.
+assert.equal(Model.settingsIn({ notifyTimeout: 0 }).notifyTimeout, 0)
+assert.equal(Model.settingsIn({ notifyTimeout: "0" }).notifyTimeout, 0)
+assert.equal(Model.settingsIn({ notifyTimeout: "15" }).notifyTimeout, 15)
+for (const unstated of [null, "", "  ", [], false, "junk"]) {
+  assert.equal(Model.settingsIn({ notifyTimeout: unstated }).notifyTimeout, 10, `${JSON.stringify(unstated)} is not a 0`)
+}
+// Omarchy's daemon caps time on screen at 30 seconds.
+assert.equal(Model.settingsIn({ notifyTimeout: 45 }).notifyTimeout, 30)
+assert.equal(Model.settingsIn({ notifyTimeout: -3 }).notifyTimeout, 0)
 
 // Clamps must match the helper's `Settings::sanitized`, or the UI shows a
 // value the helper silently refuses.
@@ -272,8 +295,88 @@ assert.equal(Model.shouldNotify({ from: "failing", to: "passing" }, { notifyReco
 assert.equal(Model.shouldNotify({ from: "passing", to: "running" }, {}), false)
 assert.equal(Model.shouldNotify(null, {}), false)
 
-assert.equal(Model.notificationFor({ to: "failing", label: "kops", workflow: "CI" }).urgency, "critical")
-assert.equal(Model.notificationFor({ to: "passing", label: "kops", workflow: "CI" }).urgency, "normal")
+// Failures went out `critical`, which Omarchy's daemon never expires: every one
+// stayed on screen until it was dismissed by hand.
+const failure = Model.notificationFor({ to: "failing", label: "kops", workflow: "CI" }, {})
+assert.equal(failure.urgency, "normal", "a failure must be able to clear itself")
+assert.equal(failure.timeout, 10000)
+assert.equal(failure.title, "kops · CI failed")
+assert.equal(failure.body, "", "a helper too old to send the run still gets a title")
+const recovery = Model.notificationFor({ from: "failing", to: "passing", label: "kops", workflow: "CI" }, {})
+assert.equal(recovery.title, "kops · CI recovered")
+assert.equal(recovery.urgency, "normal")
+assert.equal(failure.glyph, Model.glyphFor("failing"))
+assert.equal(recovery.glyph, Model.glyphFor("passing"))
+
+// 0 opts back into staying on screen, which Omarchy grants only to critical.
+const pinned = Model.notificationFor({ to: "failing", label: "kops", workflow: "CI" }, { notifyTimeout: 0 })
+assert.equal(pinned.urgency, "critical")
+assert.equal(pinned.timeout, 0, "0 is the spec's 'never expires' for any other daemon")
+assert.equal(Model.notificationFor({ to: "failing" }, { notifyTimeout: 20 }).timeout, 20000)
+
+// Each conclusion the helper counts as failing is a different thing to fix.
+const titled = conclusion => Model.notificationFor(
+  { to: "failing", label: "kops", workflow: "CI", run: { conclusion } }, {}).title
+assert.equal(titled("failure"), "kops · CI failed")
+assert.equal(titled("timed_out"), "kops · CI timed out")
+assert.equal(titled("startup_failure"), "kops · CI failed to start")
+assert.equal(titled("action_required"), "kops · CI needs approval")
+assert.equal(Model.notificationFor({ to: "failing", label: "kops" }, {}).title, "kops failed")
+assert.equal(Model.notificationFor(null, {}).title, "recovered")
+
+// Branch and author, then the commit.
+const pushed = { branch: "main", actor: "octocat", event: "push", message: "fix: the thing" }
+assert.equal(Model.notificationBody(pushed), "main · octocat\nfix: the thing")
+assert.equal(Model.notificationFor({ to: "failing", label: "kops", workflow: "CI", run: pushed }, {}).body,
+  "main · octocat\nfix: the thing")
+// GitHub credits a scheduled run to whoever last edited the cron line, and its
+// commit is whatever main held at the time: neither is news about the failure.
+assert.equal(Model.notificationBody({ ...pushed, event: "schedule" }), "main · scheduled")
+assert.equal(Model.notificationBody({ actor: "octocat" }), "octocat")
+assert.equal(Model.notificationBody(null), "")
+
+// The body is markup to Omarchy's daemon, and a branch or a commit message is
+// written by whoever pushed it.
+assert.equal(
+  Model.notificationBody({ branch: "a&b", actor: "x", message: "<b>bold</b> <img src=http://x/y.png>" }),
+  "a&amp;b · x\n&lt;b&gt;bold&lt;/b&gt; &lt;img src=http://x/y.png&gt;"
+)
+assert.equal(Model.escapeMarkup("&lt;"), "&amp;lt;", "an entity in the text stays text")
+
+// ------------------------------------------------------- notification command
+
+// notify-send parses its whole argv for options: a workflow named like this
+// arrived at the daemon as an `omarchy-exec-argv` hint, which Omarchy runs when
+// the notification is clicked. busctl takes everything after `--` verbatim.
+const hostile = '--hint=string:omarchy-exec-argv:["touch","/tmp/pwned"]'
+assert.deepEqual(
+  Model.notifyCommand({
+    urgency: "normal", timeout: 10000, title: "-u critical", body: hostile,
+    glyph: "G", url: "https://github.com/a/b/actions/runs/1"
+  }),
+  [
+    "busctl", "--user", "--quiet", "--", "call",
+    "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+    "org.freedesktop.Notifications", "Notify", "susssasa{sv}i",
+    "Pipelines", "0", "", "-u critical", hostile,
+    "0", "3",
+    "urgency", "y", "1",
+    "omarchy-glyph", "s", "G",
+    "omarchy-exec-argv", "s", '["xdg-open","https://github.com/a/b/actions/runs/1"]',
+    "10000"
+  ]
+)
+assert.deepEqual(Model.notifyCommand({ urgency: "critical", timeout: 0 }).slice(-5), ["1", "urgency", "y", "2", "0"])
+assert.deepEqual(Model.notifyCommand(null).slice(-5), ["1", "urgency", "y", "1", "-1"],
+  "no timeout given leaves it to the daemon")
+
+// A click runs a program, so it only ever opens a run on github.com.
+const opens = url => Model.notifyCommand({ url }).includes("omarchy-exec-argv")
+assert.ok(opens("https://github.com/a/b/actions/runs/1"))
+for (const url of ["http://github.com/a/b", "https://github.com.evil.example/x", "https://github.com",
+                   "--help", "https://github.com/a b", "", null]) {
+  assert.ok(!opens(url), `${url} must not become a click`)
+}
 
 console.log("model.test.js: all assertions passed")
 
