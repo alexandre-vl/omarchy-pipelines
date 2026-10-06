@@ -124,7 +124,7 @@ dependencies = [
 
 [[package]]
 name = "omarchy-pipelines-helper"
-version = "0.2.0-dev"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",

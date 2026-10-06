@@ -10,6 +10,10 @@ missing.
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.2.0
+
 ### Changed
 
 - Failure notifications clear themselves after 10 seconds instead of staying on
